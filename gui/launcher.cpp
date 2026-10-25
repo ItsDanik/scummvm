@@ -1843,7 +1843,14 @@ void LauncherGrid::build() {
 
 	new StaticTextWidget(this, "LauncherGrid.GridItemsPerRowDesc", _("Icons per row:"));
 	_gridItemSizeSlider = new SliderWidget(this, "LauncherGrid.GridItemsPerRow", Common::U32String(), kItemSizeCmd);
+#ifdef MISTER_HYBRID
+	// 4 or more, for the size the port's icons are made for (104 pixels,
+	// tools/icons.sh of ScummVM_MiSTer): a bigger icon is a bigger image to
+	// decode on the MiSTer's ARM
+	_gridItemSizeSlider->setMinValue(4);
+#else
 	_gridItemSizeSlider->setMinValue(1);
+#endif
 	_gridItemSizeSlider->setMaxValue(12);
 	_gridItemSizeSlider->setValue(ConfMan.getInt("grid_items_per_row"));
 	_gridItemSizeLabel = new StaticTextWidget(this, "LauncherGrid.GridItemsPerRowLabel", Common::U32String("  "), Common::U32String(), ThemeEngine::kFontStyleBold, Common::UNK_LANG, false);
