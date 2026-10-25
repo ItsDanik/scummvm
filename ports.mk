@@ -708,7 +708,9 @@ appimage:
 
 # The release branch is in form 'heads/branch-1-4-1', for this case
 # $CUR_BRANCH will be equal to '1', for the rest cases it will be empty
-CUR_BRANCH := $(shell cd $(srcdir); git describe --all |cut -d '-' -f 4-)
+# (MISTER_HYBRID: quiet where there is no git, as in the hybrid framework's
+# build container, which printed "git: not found" at every make)
+CUR_BRANCH := $(shell cd $(srcdir); git describe --all 2>/dev/null |cut -d '-' -f 4-)
 
 ideprojects: devtools/create_project
 ifeq ($(VER_DIRTY), -dirty)
