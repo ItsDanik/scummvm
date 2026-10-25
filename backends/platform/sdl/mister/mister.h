@@ -39,6 +39,7 @@ public:
 	void engineDone() override;
 
 	Common::KeymapperDefaultBindings *getKeymapperDefaultBindings() override;
+	Common::Path getDefaultIconsPath() override;
 
 	// The OSD's options, applied as they change: called with every event poll
 	void applyOSD(bool force);

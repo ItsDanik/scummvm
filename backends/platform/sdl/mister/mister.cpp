@@ -80,6 +80,11 @@ void OSystem_SDL_MiSTer::initBackend() {
 	if (!ConfMan.hasKey("gui_theme", Common::ConfigManager::kApplicationDomain))
 		ConfMan.set("gui_theme", "misterhybrid", Common::ConfigManager::kApplicationDomain);
 	ConfMan.registerDefault("gui_disable_fixed_font_scaling", true);
+	// the launcher's grid, which shows the games' icons (only in ScummVM's
+	// high resolution layout: at 320x200 it is the list); read from the
+	// settings alone (gui/launcher.cpp), so written there as the theme
+	if (!ConfMan.hasKey("gui_launcher_chooser", Common::ConfigManager::kApplicationDomain))
+		ConfMan.set("gui_launcher_chooser", "grid", Common::ConfigManager::kApplicationDomain);
 	ConfMan.registerDefault("output_rate", 44100);
 	// the core's FM chip and MIDI synthesizer
 	ConfMan.registerDefault("opl_driver", "mister");
@@ -270,6 +275,12 @@ Common::KeymapperDefaultBindings *OSystem_SDL_MiSTer::getKeymapperDefaultBinding
 // written to it would stop the game)
 Common::Path OSystem_SDL_MiSTer::getDefaultConfigFileName() {
 	return dataDir().join("scummvm.ini");
+}
+
+// ScummVM's game icons come with the port (tools/icons.sh of ScummVM_MiSTer),
+// in icons/ next to the program, not in the XDG cache of $HOME
+Common::Path OSystem_SDL_MiSTer::getDefaultIconsPath() {
+	return programDir().join("icons");
 }
 
 Common::Path OSystem_SDL_MiSTer::getDefaultLogFileName() {
