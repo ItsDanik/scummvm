@@ -796,9 +796,29 @@ void GridWidget::setGroupHeaderFormat(const Common::U32String &prefix, const Com
 	_groupHeaderSuffix = suffix;
 }
 
+#ifdef MISTER_HYBRID
+// The port's icons come in the sizes its layouts draw them at (icons<size>/
+// of its pack, tools/make_icons.py of ScummVM_MiSTer): one made for the size
+// is only decoded, never scaled on the MiSTer's ARM. Else icons/, scaled.
+static Common::SharedPtr<Graphics::ManagedSurface> loadIcon(const Common::String &path, int w, int h) {
+	if (w == h && path.hasPrefix("icons/")) {
+		Common::SharedPtr<Graphics::ManagedSurface> surf = loadSurfaceFromFile(Common::String::format("icons%d/%s", w, path.c_str() + 6));
+		if (surf)
+			return surf;
+	}
+	return loadSurfaceFromFile(path);
+}
+#endif
+
 void GridWidget::reloadThumbnails() {
 	const int thumbnailWidth = MAX(_thumbnailWidth - 2 * _thumbnailMargin, 0);
 	const int thumbnailHeight = MAX(_thumbnailHeight - 2 * _thumbnailMargin, 0);
+#ifdef MISTER_HYBRID
+	// not before the layout gives the thumbnails their size: the icons would
+	// be decoded twice, the change of size loads them again (reflowLayout())
+	if (!thumbnailWidth || !thumbnailHeight)
+		return;
+#endif
 	for (Common::Array<GridItemInfo *>::iterator iter = _visibleEntryList.begin(); iter != _visibleEntryList.end(); ++iter) {
 		GridItemInfo *entry = *iter;
 		if (entry->thumbPath.empty())
@@ -807,11 +827,19 @@ void GridWidget::reloadThumbnails() {
 		if (!_loadedSurfaces.contains(entry->thumbPath)) {
 			_loadedSurfaces[entry->thumbPath].reset();
 			Common::String path = Common::String::format("icons/%s-%s.png", entry->engineid.c_str(), entry->gameid.c_str());
+#ifdef MISTER_HYBRID
+			Common::SharedPtr<Graphics::ManagedSurface> surf = loadIcon(path, thumbnailWidth, thumbnailHeight);
+#else
 			Common::SharedPtr<Graphics::ManagedSurface> surf = loadSurfaceFromFile(path);
+#endif
 			if (!surf) {
 				path = Common::String::format("icons/%s.png", entry->engineid.c_str());
 				if (!_loadedSurfaces.contains(path)) {
+#ifdef MISTER_HYBRID
+					surf = loadIcon(path, thumbnailWidth, thumbnailHeight);
+#else
 					surf = loadSurfaceFromFile(path);
+#endif
 				} else {
 					_loadedSurfaces[entry->thumbPath] = _loadedSurfaces[path];
 				}

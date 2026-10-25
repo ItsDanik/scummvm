@@ -57,6 +57,11 @@
 #include "engines/advancedDetector.h"
 
 #include "graphics/cursorman.h"
+#ifdef MISTER_HYBRID
+#include "common/language.h"
+#include "common/platform.h"
+#include "image/jpeg.h"
+#endif
 #ifdef USE_CLOUD
 #include "backends/cloud/cloudmanager.h"
 #endif
@@ -86,6 +91,9 @@ enum {
 
 	kListSwitchCmd = 'LIST',
 	kGridSwitchCmd = 'GRID',
+#ifdef MISTER_HYBRID
+	kArtSwitchCmd = 'ARTV',
+#endif
 
 	kCmdGlobalGraphicsOverride = 'OGFX',
 	kCmdGlobalAudioOverride = 'OSFX',
@@ -188,6 +196,9 @@ LauncherDialog::LauncherDialog(const Common::String &dialogName)
 #endif // !DISABLE_FANCY_THEMES
 #ifndef DISABLE_LAUNCHERDISPLAY_GRID
 	, _listButton(nullptr), _gridButton(nullptr)
+#ifdef MISTER_HYBRID
+	, _artButton(nullptr)
+#endif
 #endif // !DISABLE_LAUNCHERDISPLAY_GRID
 	{
 	_backgroundType = GUI::ThemeEngine::kDialogBackgroundMain;
@@ -871,11 +882,22 @@ void LauncherDialog::handleCommand(CommandSender *sender, uint32 cmd, uint32 dat
 		ConfMan.set("gui_launcher_chooser", "list", Common::ConfigManager::kApplicationDomain);
 		close();
 		break;
+#ifdef MISTER_HYBRID
+	case kArtSwitchCmd:
+		setResult(kSwitchLauncherDialog);
+		ConfMan.set("gui_launcher_chooser", "art", Common::ConfigManager::kApplicationDomain);
+		close();
+		break;
+#endif
 #endif
 	default:
 		Dialog::handleCommand(sender, cmd, data);
 	}
 }
+
+#if defined(MISTER_HYBRID) && !defined(DISABLE_LAUNCHERDISPLAY_GRID)
+LauncherDisplayType getRequestedLauncherType();
+#endif
 
 void LauncherDialog::reflowLayout() {
 	if (getType() == kLauncherDisplayGrid && !g_gui.xmlEval()->getVar("Globals.GridSupported", 0)) {
@@ -883,6 +905,15 @@ void LauncherDialog::reflowLayout() {
 		close();
 		return;
 	}
+#if defined(MISTER_HYBRID) && !defined(DISABLE_LAUNCHERDISPLAY_GRID)
+	// the view picked, again when the layout has it (the OSD's Launcher
+	// switches 320x200, list only, and 640x480 while the launcher shows)
+	if (getType() != getRequestedLauncherType()) {
+		setResult(kSwitchLauncherDialog);
+		close();
+		return;
+	}
+#endif
 #ifndef DISABLE_FANCY_THEMES
 	if (g_gui.xmlEval()->getVar("Globals.ShowLauncherLogo") == 1 && g_gui.theme()->supportsImages()) {
 		StaticTextWidget *ver = (StaticTextWidget *)findWidget(Common::String(_title + ".Version").c_str());
@@ -988,11 +1019,24 @@ void LauncherDialog::addLayoutChooserButtons() {
 		_gridButton = nullptr;
 	}
 
+#ifdef MISTER_HYBRID
+	if (_artButton) {
+		removeWidget(_artButton);
+		g_gui.addToTrash(_artButton, this);
+		_artButton = nullptr;
+	}
+#endif
+
 	if (!g_gui.xmlEval()->getVar("Globals.GridSupported", 0))
 		return;
 
 	_listButton = createSwitchButton(_title + ".ListSwitch", Common::U32String("L"), _("List view"), ThemeEngine::kImageList, kListSwitchCmd);
 	_gridButton = createSwitchButton(_title + ".GridSwitch", Common::U32String("G"), _("Grid view"), ThemeEngine::kImageGrid, kGridSwitchCmd);
+#ifdef MISTER_HYBRID
+	// the port's theme alone has the view (tools/make_theme.py of ScummVM_MiSTer)
+	if (g_gui.xmlEval()->getVar("Globals.LauncherArtSupported", 0))
+		_artButton = createSwitchButton(_title + ".ArtSwitch", Common::U32String("A"), _("Artwork view"), "art.bmp", kArtSwitchCmd);
+#endif
 }
 
 ButtonWidget *LauncherDialog::createSwitchButton(const Common::String &name, const Common::U32String &desc, const Common::U32String &tooltip, const char *image, uint32 cmd) {
@@ -1032,6 +1076,10 @@ LauncherDisplayType getRequestedLauncherType() {
 	// those conditions need to be added here
 	if (userConfig.equalsIgnoreCase("grid") && g_gui.xmlEval()->getVar("Globals.GridSupported", 0)) {
 		return kLauncherDisplayGrid;
+#ifdef MISTER_HYBRID
+	} else if (userConfig.equalsIgnoreCase("art") && g_gui.xmlEval()->getVar("Globals.LauncherArtSupported", 0)) {
+		return kLauncherDisplayArt;
+#endif
 	} else {
 		return kLauncherDisplayList;
 	}
@@ -1066,6 +1114,41 @@ private:
 };
 #endif // !DISABLE_LAUNCHERDISPLAY_GRID
 
+#ifdef MISTER_HYBRID
+class ArtWidget;
+
+// The MiSTer port's third view (Danik, 2026-10-25): the list, and beside it
+// the selected game's artwork, ScummVM's icon made for the size of its place
+// (icons<size>/ of the port's icon pack, tools/make_icons.py of
+// ScummVM_MiSTer), with the game's details from the pack's games.xml and the
+// game's settings. Only the port's theme has its layout (LauncherArt).
+class LauncherArt : public LauncherSimple {
+public:
+	LauncherArt(const Common::String &title);
+
+	void handleCommand(CommandSender *sender, uint32 cmd, uint32 data) override;
+
+	LauncherDisplayType getType() const override { return kLauncherDisplayArt; }
+
+protected:
+	void build() override;
+	void open() override;
+	void reflowLayout() override;
+	void updateListing(int selPos = -1) override;
+
+private:
+	void addArtWidgets();
+	void updateArt();
+
+	static const int kDetailLines = 4;
+
+	ArtWidget        *_art;
+	StaticTextWidget *_artTitle;
+	StaticTextWidget *_details[kDetailLines];
+	Common::String    _artTarget; // the game whose artwork and details are shown
+};
+#endif
+
 
 void LauncherChooser::selectLauncher() {
 #ifndef DISABLE_LAUNCHERDISPLAY_GRID
@@ -1078,6 +1161,11 @@ void LauncherChooser::selectLauncher() {
 		case kLauncherDisplayGrid:
 			_impl = new LauncherGrid("LauncherGrid");
 			break;
+#ifdef MISTER_HYBRID
+		case kLauncherDisplayArt:
+			_impl = new LauncherArt("LauncherArt");
+			break;
+#endif
 
 		default:
 			// fallthrough intended
@@ -1165,10 +1253,10 @@ void LauncherSimple::build() {
 	LauncherDialog::build();
 
 	_startButton =
-		new ButtonWidget(this, "Launcher.StartButton", _("~S~tart"), _("Start selected game"), kStartCmd);
+		new ButtonWidget(this, _title + ".StartButton", _("~S~tart"), _("Start selected game"), kStartCmd);
 
 	DropdownButtonWidget *loadButton =
-	        new DropdownButtonWidget(this, "Launcher.LoadGameButton", _("~L~oad..."), _("Load saved game for selected game"), kLoadGameCmd);
+	        new DropdownButtonWidget(this, _title + ".LoadGameButton", _("~L~oad..."), _("Load saved game for selected game"), kLoadGameCmd);
 #ifdef ENABLE_EVENTRECORDER
 	loadButton->appendEntry(_("Record..."), kRecordGameCmd);
 #endif
@@ -1176,10 +1264,10 @@ void LauncherSimple::build() {
 
 	// Add edit button
 	_editButton =
-		new ButtonWidget(this, "Launcher.EditGameButton", _("~G~ame Options..."), _("Change game options"), kEditGameCmd, 0, _c("~G~ame Opts...", "lowres"));
+		new ButtonWidget(this, _title + ".EditGameButton", _("~G~ame Options..."), _("Change game options"), kEditGameCmd, 0, _c("~G~ame Opts...", "lowres"));
 
 	// Add list with game titles
-	_list = new GroupedListWidget(this, "Launcher.GameList", Common::U32String(), kListSearchCmd);
+	_list = new GroupedListWidget(this, _title + ".GameList", Common::U32String(), kListSearchCmd);
 	_list->setEditable(false);
 	_list->enableDictionarySelect(true);
 	_list->setNumberingMode(kListNumberingOff);
@@ -1844,10 +1932,10 @@ void LauncherGrid::build() {
 	new StaticTextWidget(this, "LauncherGrid.GridItemsPerRowDesc", _("Icons per row:"));
 	_gridItemSizeSlider = new SliderWidget(this, "LauncherGrid.GridItemsPerRow", Common::U32String(), kItemSizeCmd);
 #ifdef MISTER_HYBRID
-	// 4 or more, for the size the port's icons are made for (104 pixels,
-	// tools/icons.sh of ScummVM_MiSTer): a bigger icon is a bigger image to
-	// decode on the MiSTer's ARM
-	_gridItemSizeSlider->setMinValue(4);
+	// 3 or more, the sizes the port's icons are made for (149 and 104 pixels,
+	// tools/make_icons.py of ScummVM_MiSTer): a bigger icon is a bigger image
+	// to decode on the MiSTer's ARM
+	_gridItemSizeSlider->setMinValue(3);
 #else
 	_gridItemSizeSlider->setMinValue(1);
 #endif
@@ -1883,6 +1971,183 @@ void LauncherGrid::updateSelectionAfterRemoval() {
 }
 
 #endif // !DISABLE_LAUNCHERDISPLAY_GRID
+
+#ifdef MISTER_HYBRID
+#pragma mark -
+
+// gui/widgets/grid.cpp
+Common::SharedPtr<Graphics::ManagedSurface> loadSurfaceFromFile(const Common::String &name, int renderWidth, int renderHeight);
+Common::SharedPtr<Graphics::ManagedSurface> scaleGfx(Common::SharedPtr<Graphics::ManagedSurface> &gfx, int w, int h, bool filtering);
+
+// A picture in the place the layout gives it, centred (a GraphicsWidget
+// takes the picture's size)
+class ArtWidget : public GraphicsWidget {
+public:
+	ArtWidget(GuiObject *boss, const Common::String &name) : GraphicsWidget(boss, name) {}
+
+	void setArt(const Common::SharedPtr<Graphics::ManagedSurface> &gfx) {
+		const bool cover = _gfx && gfx && _gfx->w <= gfx->w && _gfx->h <= gfx->h;
+		_gfx = gfx;
+		_alphaType = gfx ? gfx->detectAlpha() : Graphics::ALPHA_OPAQUE;
+		// the next picture draws over the last one only where it covers it
+		if (cover)
+			markAsDirty();
+		else
+			g_gui.scheduleTopDialogRedraw();
+	}
+};
+
+// The artwork of a game (<engine>-<game>) or of its engine (<engine>): made
+// for w x h (a JPEG on the theme's background, decoded only), else ScummVM's
+// icon scaled
+static Common::SharedPtr<Graphics::ManagedSurface> loadArt(const Common::String &name, int w, int h) {
+	Common::SharedPtr<Graphics::ManagedSurface> surf;
+	const Common::Path path(Common::String::format("icons%d/%s.jpg", w, name.c_str()));
+	g_gui.lockIconsSet();
+	if (w == h && g_gui.getIconsSet().hasFile(path)) {
+		Common::SeekableReadStream *stream = g_gui.getIconsSet().createReadStreamForMember(path);
+		Image::JPEGDecoder decoder;
+		decoder.setOutputPixelFormat(g_gui.theme()->getPixelFormat());
+		if (stream && decoder.loadStream(*stream) && decoder.getSurface()) {
+			surf.reset(new Graphics::ManagedSurface());
+			surf->copyFrom(*decoder.getSurface());
+		}
+		delete stream;
+	}
+	g_gui.unlockIconsSet();
+	if (!surf) {
+		surf = loadSurfaceFromFile(Common::String::format("icons/%s.png", name.c_str()), 0, 0);
+		if (surf)
+			surf = scaleGfx(surf, w, h, true);
+	}
+	return surf;
+}
+
+LauncherArt::LauncherArt(const Common::String &title)
+	: LauncherSimple(title), _art(nullptr), _artTitle(nullptr), _details() {
+	addArtWidgets();
+}
+
+void LauncherArt::build() {
+	// LauncherSimple::build() updates the listing, before these are made
+	_art = nullptr;
+	LauncherSimple::build();
+	addArtWidgets();
+}
+
+void LauncherArt::addArtWidgets() {
+	_art = new ArtWidget(this, _title + ".Art");
+	_artTitle = new StaticTextWidget(this, _title + ".ArtTitle", Common::U32String(), Common::U32String(), ThemeEngine::kFontStyleBold);
+	for (int i = 0; i < kDetailLines; i++) {
+		_details[i] = new StaticTextWidget(this, Common::String::format("%s.ArtDetail%d", _title.c_str(), i + 1), Common::U32String());
+		_details[i]->setFontColor(ThemeEngine::kFontColorAlternate);
+	}
+	_artTarget.clear();
+	updateArt();
+}
+
+void LauncherArt::open() {
+	LauncherSimple::open();
+	_artTarget.clear();
+	updateArt();
+}
+
+void LauncherArt::reflowLayout() {
+	LauncherSimple::reflowLayout();
+	// a layout without the view (320x200): the dialog makes way for the list
+	if (!g_gui.xmlEval()->getVar("Globals.LauncherArtSupported", 0))
+		return;
+#ifndef DISABLE_FANCY_THEMES
+	// the logo in one line with the search, as in the in-game menu
+	if (_logo)
+		_logo->setGfxFromTheme(ThemeEngine::kImageLogoSmall);
+#endif
+	// the size of the artwork's place may have changed
+	_artTarget.clear();
+	updateArt();
+}
+
+void LauncherArt::updateListing(int selPos) {
+	LauncherSimple::updateListing(selPos);
+	updateArt();
+}
+
+void LauncherArt::handleCommand(CommandSender *sender, uint32 cmd, uint32 data) {
+	LauncherSimple::handleCommand(sender, cmd, data);
+	// a click, a key, the search: whatever changed the selection
+	if (isVisible())
+		updateArt();
+}
+
+void LauncherArt::updateArt() {
+	if (!_art)
+		return;
+	const int item = getSelected();
+	const Common::String target = item >= 0 && item < (int)_domains.size() ? _domains[item] : Common::String();
+	if (target == _artTarget && !target.empty())
+		return;
+	_artTarget = target;
+
+	const Common::ConfigManager::Domain *domain = target.empty() ? nullptr : ConfMan.getDomain(target);
+	Common::String engineid, gameid;
+	if (domain) {
+		domain->tryGetVal("engineid", engineid);
+		domain->tryGetVal("gameid", gameid);
+	}
+
+	Common::SharedPtr<Graphics::ManagedSurface> gfx;
+	int16 x, y, w, h;
+	if (domain && g_gui.xmlEval()->getWidgetData(_title + ".Art", x, y, w, h) && w > 0 && h > 0) {
+		gfx = loadArt(engineid + "-" + gameid, w, h);
+		if (!gfx)
+			gfx = loadArt(engineid, w, h);
+	}
+	_art->setArt(gfx);
+
+	// the title, the publisher and year, the series, the engine, and the
+	// platform, language and variant of this copy, each line only if known
+	Common::U32String title;
+	Common::U32StringArray lines;
+	if (domain) {
+		MetadataGame game;
+		_metadataParser._gameInfo.tryGetVal(buildQualifiedGameName(engineid, gameid), game);
+		title = Common::U32String(game.name.empty() ? domain->getValOrDefault("description") : game.name);
+
+		Common::String line;
+		MetadataCompany company;
+		if (!game.company_id.empty() && _metadataParser._companyInfo.tryGetVal(game.company_id, company))
+			line = company.name;
+		if (!game.year.empty())
+			line += (line.empty() ? "" : ", ") + game.year;
+		if (!line.empty())
+			lines.push_back(Common::U32String(line));
+
+		MetadataSeries series;
+		if (!game.series_id.empty() && _metadataParser._seriesInfo.tryGetVal(game.series_id, series))
+			lines.push_back(_("Series: ") + Common::U32String(series.name));
+
+		MetadataEngine engine;
+		if (_metadataParser._engineInfo.tryGetVal(engineid, engine))
+			lines.push_back(_("Engine: ") + Common::U32String(engine.name));
+
+		line.clear();
+		const Common::Platform platform = Common::parsePlatform(domain->getValOrDefault("platform"));
+		if (platform != Common::kPlatformUnknown)
+			line = Common::getPlatformDescription(platform);
+		const Common::Language language = Common::parseLanguage(domain->getValOrDefault("language"));
+		if (language != Common::UNK_LANG)
+			line += Common::String(line.empty() ? "" : ", ") + Common::getLanguageDescription(language);
+		const Common::String extra = domain->getValOrDefault("extra");
+		if (!extra.empty())
+			line += (line.empty() ? "" : ", ") + extra;
+		if (!line.empty())
+			lines.push_back(Common::U32String(line));
+	}
+	_artTitle->setLabel(title);
+	for (int i = 0; i < kDetailLines; i++)
+		_details[i]->setLabel(i < (int)lines.size() ? lines[i] : Common::U32String());
+}
+#endif
 
 void LauncherDialog::confirmRemoveGames(const Common::Array<bool> &selectedItems) {
 	// Count selected items

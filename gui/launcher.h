@@ -41,6 +41,10 @@ namespace GUI {
 enum LauncherDisplayType {
 	kLauncherDisplayList = 1,
 	kLauncherDisplayGrid = 2
+#ifdef MISTER_HYBRID
+	// the list with the selected game's artwork and details beside it
+	, kLauncherDisplayArt = 3
+#endif
 };
 
 enum GroupingMethod {
@@ -154,6 +158,9 @@ protected:
 #ifndef DISABLE_LAUNCHERDISPLAY_GRID
 	ButtonWidget		*_listButton;
 	ButtonWidget		*_gridButton;
+#ifdef MISTER_HYBRID
+	ButtonWidget		*_artButton;
+#endif
 
 	/**
 	 * Create two buttons to choose between grid display and list display
