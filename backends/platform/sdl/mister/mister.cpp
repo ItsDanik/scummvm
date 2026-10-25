@@ -80,11 +80,12 @@ void OSystem_SDL_MiSTer::initBackend() {
 	if (!ConfMan.hasKey("gui_theme", Common::ConfigManager::kApplicationDomain))
 		ConfMan.set("gui_theme", "misterhybrid", Common::ConfigManager::kApplicationDomain);
 	ConfMan.registerDefault("gui_disable_fixed_font_scaling", true);
-	// the launcher's grid, which shows the games' icons (only in ScummVM's
-	// high resolution layout: at 320x200 it is the list); read from the
-	// settings alone (gui/launcher.cpp), so written there as the theme
+	// the launcher's artwork view, the list with the selected game's icon
+	// and details (LauncherArt; only in the theme's high resolution layout:
+	// at 320x200 it is the list); read from the settings alone
+	// (gui/launcher.cpp), so written there as the theme
 	if (!ConfMan.hasKey("gui_launcher_chooser", Common::ConfigManager::kApplicationDomain))
-		ConfMan.set("gui_launcher_chooser", "grid", Common::ConfigManager::kApplicationDomain);
+		ConfMan.set("gui_launcher_chooser", "art", Common::ConfigManager::kApplicationDomain);
 	// at least 3 icons a row, as the launcher's slider allows (gui/launcher.cpp):
 	// the icons are made for 3 and 4 (149 and 104 pixels, tools/make_icons.py)
 	if (ConfMan.hasKey("grid_items_per_row") && ConfMan.getInt("grid_items_per_row") < 3)
