@@ -36,6 +36,11 @@ namespace TinyGL {
 Common::Point transformPoint(float x, float y, int rotation);
 Common::Rect rotateRectangle(int x, int y, int width, int height, int rotation, int originX, int originY);
 
+// The versions of all images are different from each other: an image that
+// replaces one freed at the same address is not taken for it
+// (presentBufferSimple())
+static int lastBlitImageVersion;
+
 struct BlitImage {
 public:
 	BlitImage() : _isDisposed(false), _version(0), _binaryTransparent(false), _opaque(true), _zBuffer(false), _refcount(1) { }
@@ -84,6 +89,17 @@ public:
 				}
 			}
 
+			// Nothing was keyed out (the backgrounds of Grim Fandango): an
+			// opaque image, kept in the frame buffer's format so that it is
+			// copied, not converted, whenever it is drawn
+			if (_opaque) {
+				GLContext *c = gl_get_context();
+				_surface.convertFrom(surface, c->fb->getPixelFormat());
+				_binaryTransparent = false;
+				_version = ++lastBlitImageVersion;
+				return;
+			}
+
 			// Create opaque lines data.
 			// A line of pixels can not wrap more that one line of the image, since it would break
 			// blitting of bitmaps with a non-zero x position.
@@ -113,7 +129,7 @@ public:
 			}
 		}
 
-		_version++;
+		_version = ++lastBlitImageVersion;
 	}
 
 	int getVersion() const {
@@ -317,6 +333,10 @@ private:
 void tglGetBlitImageSize(TinyGL::BlitImage *blitImage, int &width, int &height) {
 	width = blitImage->getWidth();
 	height = blitImage->getHeight();
+}
+
+bool tglIsBlitImageOpaque(TinyGL::BlitImage *blitImage) {
+	return blitImage->isOpaque();
 }
 
 void tglIncBlitImageRef(TinyGL::BlitImage *blitImage) {

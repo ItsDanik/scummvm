@@ -1091,8 +1091,15 @@ void GfxTinyGL::createTexture(Texture *texture, const uint8 *data, const CMap *c
 	tglTexParameteri(TGL_TEXTURE_2D, TGL_TEXTURE_WRAP_S, TGL_REPEAT);
 	tglTexParameteri(TGL_TEXTURE_2D, TGL_TEXTURE_WRAP_T, TGL_REPEAT);
 
+#ifdef MISTER_HYBRID
+	// Point sampled, as the original game's software renderer: bilinear
+	// filtering is most of the time Manny takes to draw on the MiSTer's ARM
+	tglTexParameteri(TGL_TEXTURE_2D, TGL_TEXTURE_MAG_FILTER, TGL_NEAREST);
+	tglTexParameteri(TGL_TEXTURE_2D, TGL_TEXTURE_MIN_FILTER, TGL_NEAREST);
+#else
 	tglTexParameteri(TGL_TEXTURE_2D, TGL_TEXTURE_MAG_FILTER, TGL_LINEAR);
 	tglTexParameteri(TGL_TEXTURE_2D, TGL_TEXTURE_MIN_FILTER, TGL_LINEAR);
+#endif
 
 	if (cmap != nullptr) { // EMI doesn't have colour-maps
 		uint8 *texdata = new uint8[texture->_width * texture->_height * 4];

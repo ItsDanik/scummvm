@@ -112,6 +112,9 @@ public:
 		#if defined(USE_ALSA)
 		LINK_PLUGIN(ALSA)
 		#endif
+		#if defined(MISTER_HYBRID)
+		LINK_PLUGIN(MISTER)
+		#endif
 		#if defined(USE_SEQ_MIDI)
 		LINK_PLUGIN(SEQ)
 		#endif

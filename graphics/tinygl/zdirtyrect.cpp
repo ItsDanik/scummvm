@@ -249,14 +249,95 @@ void GLContext::presentBufferDirtyRects(Common::List<Common::Rect> &dirtyAreas) 
 	_drawCallAllocator[_currentAllocatorIndex].reset();
 }
 
-void GLContext::presentBufferSimple(Common::List<Common::Rect> &dirtyAreas) {
-	dirtyAreas.push_back(Common::Rect(fb->getPixelBufferWidth(), fb->getPixelBufferHeight()));
+// Adds a rectangle to a short list of them, merged into one that is near
+static void addDrawnRegion(Common::Array<Common::Rect> &regions, const Common::Rect &rect) {
+	if (rect.isEmpty())
+		return;
+	Common::Rect near(rect);
+	near.grow(16);
+	for (auto &region : regions) {
+		if (region.intersects(near)) {
+			region.extend(rect);
+			return;
+		}
+	}
+	if (regions.size() < 8) {
+		regions.push_back(rect);
+		return;
+	}
+	uint best = 0;
+	int bestGrowth = 0x7fffffff;
+	for (uint i = 0; i < regions.size(); i++) {
+		Common::Rect merged(regions[i]);
+		merged.extend(rect);
+		int growth = merged.width() * merged.height() - regions[i].width() * regions[i].height();
+		if (growth < bestGrowth) {
+			best = i;
+			bestGrowth = growth;
+		}
+	}
+	regions[best].extend(rect);
+}
 
-	for (const auto &drawCall : _drawCallsQueue) {
-		drawCall->execute(true);
-		delete drawCall;
+void GLContext::presentBufferSimple(Common::List<Common::Rect> &dirtyAreas) {
+	const Common::Rect screen(fb->getPixelBufferWidth(), fb->getPixelBufferHeight());
+
+	// A clear that blits overwrite before anything is drawn is left out: Grim
+	// Fandango clears both buffers every frame, then copies its background
+	// and its z buffer image over all of them (milliseconds on a slow CPU)
+	for (auto it = _drawCallsQueue.begin(); it != _drawCallsQueue.end(); ++it) {
+		if ((*it)->getType() != DrawCall::DrawCall_Clear)
+			continue;
+		ClearBufferDrawCall *clear = (ClearBufferDrawCall *)*it;
+		auto next = it;
+		for (++next; next != _drawCallsQueue.end() && (*next)->getType() == DrawCall::DrawCall_Blitting; ++next) {
+			bool zBuffer;
+			if (((const BlittingDrawCall *)*next)->overwritesBuffer(zBuffer))
+				clear->skipBuffer(zBuffer);
+		}
 	}
 
+	// The frame's first draw calls, which overwrite whole buffers and then
+	// blit over them (the base: Grim's background, its z buffer image and
+	// the parts of the room in front), are drawn again only where the last
+	// frame drew over them, when they are the same as its: the rest of the
+	// buffers still has them
+	Common::Array<uint32> base;
+	bool colorSet = false, zSet = false;
+	auto baseEnd = _drawCallsQueue.begin();
+	while (baseEnd != _drawCallsQueue.end() && (*baseEnd)->baseSignature(base, colorSet, zSet))
+		++baseEnd;
+	Common::Array<Common::Rect> drawn;
+	for (auto it = baseEnd; it != _drawCallsQueue.end(); ++it)
+		addDrawnRegion(drawn, (*it)->drawnRegion().findIntersectingRect(screen));
+
+	const bool partial = !base.empty() && base == _lastBase && screen == _lastScreen;
+	bool inBase = partial;
+	for (auto it = _drawCallsQueue.begin(); it != _drawCallsQueue.end(); ++it) {
+		inBase &= it != baseEnd;
+		if (inBase) {
+			for (const auto &region : _lastDrawn)
+				(*it)->execute(true, &region);
+		} else {
+			(*it)->execute(true);
+		}
+	}
+
+	if (partial && !_presentedUnseen) {
+		for (const auto &region : _lastDrawn)
+			dirtyAreas.push_back(region);
+		for (const auto &region : drawn)
+			dirtyAreas.push_back(region);
+	} else {
+		dirtyAreas.push_back(screen);
+	}
+	_presentedUnseen = false;
+	_lastBase = base;
+	_lastDrawn = drawn;
+	_lastScreen = screen;
+
+	for (const auto &drawCall : _drawCallsQueue)
+		delete drawCall;
 	_drawCallsQueue.clear();
 
 	disposeResources();
@@ -276,6 +357,8 @@ void presentBuffer(Common::List<Common::Rect> &dirtyAreas) {
 void presentBuffer() {
 	Common::List<Common::Rect> dirtyAreas;
 	presentBuffer(dirtyAreas);
+	// nobody was told what changed: the next present says all of it did
+	gl_get_context()->_presentedUnseen = true;
 }
 
 bool DrawCall::operator==(const DrawCall &other) const {
@@ -343,6 +426,19 @@ void RasterizationDrawCall::computeDirtyRegion() {
 			MIN(bottom, ymax) + 1
 		);
 	}
+}
+
+Common::Rect RasterizationDrawCall::drawnRegion() {
+	// Grim's shadows draw the floor into the stencil buffer alone
+	if (!_state.colorMaskRed && !_state.colorMaskGreen && !_state.colorMaskBlue && !_state.colorMaskAlpha &&
+	    !_state.depthWriteMask)
+		return Common::Rect();
+	_dirtyRegion = Common::Rect();
+	computeDirtyRegion();
+	// a pixel more on each side, for the rasterizer's rounding
+	if (!_dirtyRegion.isEmpty())
+		_dirtyRegion.grow(1);
+	return _dirtyRegion;
 }
 
 void RasterizationDrawCall::execute(bool restoreState, const Common::Rect *clippingRectangle) const {
@@ -623,6 +719,66 @@ void BlittingDrawCall::execute(bool restoreState, const Common::Rect *clippingRe
 	}
 }
 
+bool BlittingDrawCall::baseSignature(Common::Array<uint32> &signature, bool &colorSet, bool &zSet) const {
+	bool zBuffer;
+	if (overwritesBuffer(zBuffer)) {
+		(zBuffer ? zSet : colorSet) = true;
+	} else if (_transform._rotation != 0 || _transform._flipHorizontally || _transform._flipVertically ||
+	           _transform._destinationRectangle.width() != 0 || _transform._destinationRectangle.height() != 0 ||
+	           !(_mode == BlitMode_ZBuffer ? zSet : colorSet)) {
+		// what it writes depends on more than the base before it, or it is
+		// scaled or turned (not drawn again the same in a part of the screen)
+		return false;
+	}
+	const uint32 words[] = {
+		DrawCall_Blitting, (uint32)_mode, (uint32)(uintptr)_image, (uint32)_imageVersion,
+		(uint32)_transform._sourceRectangle.left, (uint32)_transform._sourceRectangle.top,
+		(uint32)_transform._sourceRectangle.right, (uint32)_transform._sourceRectangle.bottom,
+		(uint32)_transform._destinationRectangle.left, (uint32)_transform._destinationRectangle.top,
+		(uint32)(_transform._aTint * 65536), (uint32)(_transform._rTint * 65536),
+		(uint32)(_transform._gTint * 65536), (uint32)(_transform._bTint * 65536),
+		_blitState.enableScissor, (uint32)_blitState.scissor[0], (uint32)_blitState.scissor[1],
+		(uint32)_blitState.scissor[2], (uint32)_blitState.scissor[3],
+		_blitState.enableBlending, (uint32)_blitState.sfactor, (uint32)_blitState.dfactor,
+		_blitState.alphaTest, (uint32)_blitState.alphaFunc, (uint32)_blitState.alphaRefValue,
+		(uint32)_blitState.depthTestEnabled
+	};
+	for (uint32 word : words)
+		signature.push_back(word);
+	return true;
+}
+
+Common::Rect BlittingDrawCall::drawnRegion() {
+	if (_transform._rotation != 0)
+		return gl_get_context()->renderRect;
+	computeDirtyRegion();
+	return _dirtyRegion;
+}
+
+bool BlittingDrawCall::overwritesBuffer(bool &zBuffer) const {
+	const GLContext *c = gl_get_context();
+	int width, height;
+	tglGetBlitImageSize(_image, width, height);
+	if (_blitState.enableScissor || _transform._destinationRectangle.left != 0 || _transform._destinationRectangle.top != 0 ||
+	    width < c->fb->getPixelBufferWidth() || height < c->fb->getPixelBufferHeight() ||
+	    !_transform._sourceRectangle.isEmpty())
+		return false;
+
+	zBuffer = _mode == BlitMode_ZBuffer;
+	if (zBuffer)
+		return true; // tglBlitZBuffer(): copied
+
+	// tglBlitOpaque(), by tglBlit() or tglBlitFast(): copied
+	return tglIsBlitImageOpaque(_image) &&
+		_transform._destinationRectangle.width() == 0 && _transform._destinationRectangle.height() == 0 &&
+		_transform._rotation == 0 && !_transform._flipHorizontally && !_transform._flipVertically &&
+		(_mode == BlitMode_Fast ||
+		 (_mode == BlitMode_Regular &&
+		  _transform._aTint == 1.0f && _transform._rTint == 1.0f && _transform._gTint == 1.0f && _transform._bTint == 1.0f &&
+		  (_blitState.sfactor == TGL_ONE || _blitState.sfactor == TGL_SRC_ALPHA) &&
+		  (_blitState.dfactor == TGL_ZERO || _blitState.dfactor == TGL_ONE_MINUS_SRC_ALPHA)));
+}
+
 BlittingDrawCall::BlittingState BlittingDrawCall::captureState() const {
 	BlittingState state;
 	TinyGL::GLContext *c = gl_get_context();
@@ -711,6 +867,27 @@ ClearBufferDrawCall::ClearBufferDrawCall(bool clearZBuffer, int zValue,
 	if (c->_enableDirtyRectangles) {
 		_dirtyRegion = c->renderRect;
 	}
+}
+
+bool ClearBufferDrawCall::baseSignature(Common::Array<uint32> &signature, bool &colorSet, bool &zSet) const {
+	if (_clearStencilBuffer || _clearState.enableScissor)
+		return false;
+	colorSet |= _clearColorBuffer;
+	zSet |= _clearZBuffer;
+	const uint32 words[] = {
+		DrawCall_Clear, _clearZBuffer, (uint32)_zValue,
+		_clearColorBuffer, (uint32)_rValue, (uint32)_gValue, (uint32)_bValue
+	};
+	for (uint32 word : words)
+		signature.push_back(word);
+	return true;
+}
+
+Common::Rect ClearBufferDrawCall::drawnRegion() {
+	// a scissor's rectangle would do, the whole of it is enough for Grim
+	if (!_clearZBuffer && !_clearColorBuffer)
+		return Common::Rect();
+	return gl_get_context()->renderRect;
 }
 
 void ClearBufferDrawCall::execute(bool restoreState, const Common::Rect *clippingRectangle) const {

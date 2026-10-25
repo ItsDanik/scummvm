@@ -104,6 +104,7 @@ public:
 	void scheduleFullRedraw();
 
 	bool isActive() const	{ return ! _dialogStack.empty(); }
+	int getDialogCount() const	{ return _dialogStack.size(); }
 
 	bool loadNewTheme(Common::String id, ThemeEngine::GraphicsMode gfx = ThemeEngine::kGfxDisabled, bool force = false);
 	ThemeEngine *theme() { return _theme; }

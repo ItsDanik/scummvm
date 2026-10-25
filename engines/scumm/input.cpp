@@ -27,6 +27,9 @@
 
 #include "backends/keymapper/keymapper.h"
 
+#ifdef MISTER_HYBRID
+#include "backends/platform/sdl/mister/mister_port.h"
+#endif
 #include "scumm/debugger.h"
 #include "scumm/dialogs.h"
 #include "scumm/insane/insane.h"
@@ -342,6 +345,15 @@ void ScummEngine::endTextInput() {
 
 void ScummEngine::parseEvents() {
 	Common::Event event;
+
+#ifdef MISTER_HYBRID
+	// the OSD's Cheats page: Fast Mode as Ctrl+F / Ctrl+G, when it changes
+	const int misterFastMode = MiSTer_FastMode();
+	if (misterFastMode != _misterFastMode) {
+		_fastMode = misterFastMode;
+		_misterFastMode = misterFastMode;
+	}
+#endif
 
 	while (_eventMan->pollEvent(event)) {
 		parseEvent(event);

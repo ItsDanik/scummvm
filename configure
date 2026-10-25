@@ -941,7 +941,7 @@ Usage: $0 [OPTIONS]...
 
 Configuration:
   -h, --help               display this help and exit
-  --backend=BACKEND        backend to build (3ds, atari, android, dc, ds, ios7,
+  --backend=BACKEND        backend to build (3ds, atari, android, dc, ds, ios7, mister,
                            maemo, n64, null, opendingux, openpandora, psp, psp2,
                            samsungtv, sdl, switch, wii) [sdl]
 
@@ -984,6 +984,7 @@ Special configuration feature:
                                             maemo for Nokia Maemo
                                             miyoo for 1st generation Miyoo
                                             miyoomini for Miyoo Mini
+                                            mister for MiSTer FPGA (a hybrid core)
                                             n64 for Nintendo 64
                                             opendingux-gcw0 for GCW0 with Opendingux Beta
                                             opendingux-lepus for Lepus with Opendingux Beta
@@ -1908,6 +1909,11 @@ miyoo)
 	_host_alias=arm-linux
 	;;
 miyoomini)
+	_host_os=linux
+	_host_cpu=arm
+	_host_alias=arm-linux-gnueabihf
+	;;
+mister)
 	_host_os=linux
 	_host_cpu=arm
 	_host_alias=arm-linux-gnueabihf
@@ -4060,6 +4066,13 @@ if test -n "$_host"; then
 			add_line_to_config_mk 'MIYOO = 1'
 			add_line_to_config_mk "MIYOO_TARGET = miyoomini"
 			;;
+		mister)
+			# MiSTer FPGA: the DE10-Nano's Cortex-A9, glibc as on the
+			# MiSTer, the compiler's runtime linked in
+			append_var CXXFLAGS "-mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -fno-pie"
+			append_var LDFLAGS "-mcpu=cortex-a9 -mfpu=neon -mfloat-abi=hard -no-pie -static-libstdc++ -static-libgcc"
+			_backend="mister"
+			;;
 		n64)
 			append_var CXXFLAGS "-mno-extern-sdata"
 			append_var CXXFLAGS "--param max-inline-insns-auto=20"
@@ -4371,6 +4384,16 @@ case $_backend in
 		;;
 	opendingux | miyoo | miyoomini | sailfish)
 		_sdlconfig=sdl-config
+		_sdl=auto
+		append_var MODULES "backends/platform/sdl"
+		;;
+	mister)
+		# A MiSTer hybrid core (backends/platform/sdl/mister): SDL2 with
+		# the drivers of github.com/ItsDanik/Hybrid_MiSTer, MIDI to the
+		# core's synthesizer, AdLib to its FM chip. Also for the PC, to run
+		# against the hybrid framework's fakecore
+		append_var DEFINES "-DMISTER_HYBRID"
+		add_line_to_config_mk 'MISTER_HYBRID = 1'
 		_sdl=auto
 		append_var MODULES "backends/platform/sdl"
 		;;
@@ -4864,7 +4887,7 @@ fi
 # Enable 16bit support only for backends which support it
 #
 case $_backend in
-	3ds | android | dc | ds | emscripten | ios7 | kolibrios | maemo | null | opendingux | miyoomini | miyoo | openpandora | psp | psp2 | sailfish | samsungtv | sdl | switch | wii)
+	3ds | android | dc | ds | emscripten | ios7 | kolibrios | maemo | mister | null | opendingux | miyoomini | miyoo | openpandora | psp | psp2 | sailfish | samsungtv | sdl | switch | wii)
 		if test "$_16bit" = auto ; then
 			_16bit=yes
 		else

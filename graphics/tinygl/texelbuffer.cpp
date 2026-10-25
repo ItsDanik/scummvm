@@ -28,8 +28,20 @@
 
 namespace TinyGL {
 
-#define ZB_POINT_ST_UNIT (1 << ZB_POINT_ST_FRAC_BITS)
-#define ZB_POINT_ST_FRAC_MASK (ZB_POINT_ST_UNIT - 1)
+
+static const int kNoShift = 32;
+
+// k for size == textureSize >> k (k < 0: textureSize << -k), kNoShift if
+// there is none
+static int ratioShift(uint size, uint textureSize) {
+	for (int k = 0; k < 16; k++) {
+		if (size == textureSize >> k)
+			return k;
+		if (size == textureSize << k)
+			return -k;
+	}
+	return kNoShift;
+}
 
 TexelBuffer::TexelBuffer(uint width, uint height, uint textureSize, int internalformat) {
 	assert(width);
@@ -43,40 +55,11 @@ TexelBuffer::TexelBuffer(uint width, uint height, uint textureSize, int internal
 	_widthRatio = (float) width / textureSize;
 	_heightRatio = (float) height / textureSize;
 	_internalformat = internalformat;
-}
-
-static inline uint wrap(uint wrap_mode, int coord, uint _fracTextureUnit, uint _fracTextureMask) {
-	switch (wrap_mode) {
-	case TGL_MIRRORED_REPEAT:
-		if (coord & _fracTextureUnit)
-			return _fracTextureMask - (coord & _fracTextureMask);
-		return coord & _fracTextureMask;
-	case TGL_CLAMP_TO_EDGE:
-		if (coord < 0)
-			return 0;
-		if ((uint) coord > _fracTextureMask)
-			return _fracTextureMask;
-		return coord;
-	default:
-		// Fall through
-	case TGL_REPEAT:
-		return coord & _fracTextureMask;
-	}
-}
-
-void TexelBuffer::getARGBAt(
-	uint wrap_s, uint wrap_t,
-	int s, int t,
-	uint8 &a, uint8 &r, uint8 &g, uint8 &b
-) const {
-	uint x, y;
-	x = wrap(wrap_s, s, _fracTextureUnit, _fracTextureMask) * _widthRatio;
-	y = wrap(wrap_t, t, _fracTextureUnit, _fracTextureMask) * _heightRatio;
-	getARGBAt(
-		(x >> ZB_POINT_ST_FRAC_BITS) + (y >> ZB_POINT_ST_FRAC_BITS) * _width,
-		x & ZB_POINT_ST_FRAC_MASK, y & ZB_POINT_ST_FRAC_MASK,
-		a, r, g, b
-	);
+	_widthShift = ratioShift(width, textureSize);
+	_heightShift = ratioShift(height, textureSize);
+	_ratioShift = _widthShift != kNoShift && _heightShift != kNoShift;
+	_texels32 = nullptr;
+	_shiftA = _shiftR = _shiftG = _shiftB = 0;
 }
 
 // Nearest: store texture in original size.
@@ -95,6 +78,14 @@ BaseNearestTexelBuffer::BaseNearestTexelBuffer(const byte *buf, const Graphics::
 	uint count = _width * _height * _format.bytesPerPixel;
 	_buf = (byte *)gl_malloc(count);
 	memcpy(_buf, buf, count);
+	if (_format.bytesPerPixel == 4 && _format.aBits() == 8 && _format.rBits() == 8 &&
+	    _format.gBits() == 8 && _format.bBits() == 8) {
+		_texels32 = (const uint32 *)_buf;
+		_shiftA = _format.aShift;
+		_shiftR = _format.rShift;
+		_shiftG = _format.gShift;
+		_shiftB = _format.bShift;
+	}
 }
 
 BaseNearestTexelBuffer::~BaseNearestTexelBuffer() {

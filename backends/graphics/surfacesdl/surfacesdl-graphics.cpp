@@ -1303,6 +1303,14 @@ void SurfaceSdlGraphicsManager::internUpdateScreen() {
 
 		origSurf = _screen;
 		srcSurf = _tmpscreen;
+#ifdef MISTER_HYBRID
+		// A game drawn in the screen's own format, at 1x and without a
+		// scaler's border, is scaled straight from its surface: one copy of
+		// the frame less (a 640x480 frame is milliseconds on the MiSTer)
+		if (_maxExtraPixels == 0 && _videoMode.scaleFactor == 1 &&
+		    _screen->format->format == _tmpscreen->format->format)
+			srcSurf = _screen;
+#endif
 		width = _videoMode.screenWidth;
 		height = _videoMode.screenHeight;
 		oldScaleFactor = scale1 = _videoMode.scaleFactor;
@@ -1336,8 +1344,13 @@ void SurfaceSdlGraphicsManager::internUpdateScreen() {
 
 	// In case of double buferring partially good version may be on another page,
 	// so we need to fully redraw
+#ifdef MISTER_HYBRID
+	// (not on the MiSTer: its two pages take turns, so what changed in this
+	// frame and in the last one, added below, is all that needs drawing)
+#else
 	if (_isDoubleBuf && _numDirtyRects)
 		_forceRedraw = true;
+#endif
 
 #if defined(USE_IMGUI) && (defined(USE_IMGUI_SDLRENDERER2) || defined(USE_IMGUI_SDLRENDERER3))
 	if (_imGuiCallbacks.render) {
@@ -1378,7 +1391,7 @@ void SurfaceSdlGraphicsManager::internUpdateScreen() {
 		uint32 bpp, srcPitch, dstPitch;
 		SDL_Rect *lastRect = _dirtyRectList + actualDirtyRects;
 
-		for (r = _dirtyRectList; r != lastRect; ++r) {
+		for (r = _dirtyRectList; r != lastRect && srcSurf != origSurf; ++r) {
 			dst = *r;
 			dst.x += _maxExtraPixels;	// Shift rect since some scalers need to access the data around
 			dst.y += _maxExtraPixels;	// any pixel to scale it, and we want to avoid mem access crashes.

@@ -75,6 +75,13 @@ public:
 	virtual void execute(bool restoreState, const Common::Rect *clippingRectangle = nullptr) const = 0;
 	DrawCallType getType() const { return _type; }
 	virtual const Common::Rect getDirtyRegion() const { return _dirtyRegion; }
+	// presentBufferSimple(): whether it can be one of the frame's first draw
+	// calls, the base, which give the color and z buffers what they have
+	// whatever they had before (then what it does goes into signature;
+	// colorSet and zSet say whether the calls before it have overwritten
+	// the whole of a buffer), and the part of the buffers it may write
+	virtual bool baseSignature(Common::Array<uint32> &signature, bool &colorSet, bool &zSet) const { return false; }
+	virtual Common::Rect drawnRegion() = 0;
 protected:
 	Common::Rect _dirtyRegion;
 private:
@@ -87,6 +94,15 @@ public:
 	virtual ~ClearBufferDrawCall() { }
 	bool operator==(const ClearBufferDrawCall &other) const;
 	void execute(bool restoreState, const Common::Rect *clippingRectangle = nullptr) const override;
+	bool baseSignature(Common::Array<uint32> &signature, bool &colorSet, bool &zSet) const override;
+	Common::Rect drawnRegion() override;
+	// Leave the z buffer or the color buffer alone (presentBufferSimple())
+	void skipBuffer(bool zBuffer) {
+		if (zBuffer)
+			_clearZBuffer = false;
+		else
+			_clearColorBuffer = false;
+	}
 
 	void *operator new(size_t size) {
 		return Internal::allocateFrame(size);
@@ -123,6 +139,7 @@ public:
 	virtual ~RasterizationDrawCall() { }
 	bool operator==(const RasterizationDrawCall &other) const;
 	void execute(bool restoreState, const Common::Rect *clippingRectangle = nullptr) const override;
+	Common::Rect drawnRegion() override;
 
 	void *operator new(size_t size) {
 		return Internal::allocateFrame(size);
@@ -210,6 +227,11 @@ public:
 	void execute(bool restoreState, const Common::Rect *clippingRectangle = nullptr) const override;
 
 	BlittingMode getBlittingMode() const { return _mode; }
+	// Whether it writes every pixel of the whole frame buffer, without
+	// reading them: of the z buffer (zBuffer true) or of the color buffer
+	bool overwritesBuffer(bool &zBuffer) const;
+	bool baseSignature(Common::Array<uint32> &signature, bool &colorSet, bool &zSet) const override;
+	Common::Rect drawnRegion() override;
 
 	void *operator new(size_t size) {
 		return Internal::allocateFrame(size);

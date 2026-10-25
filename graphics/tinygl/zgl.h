@@ -467,6 +467,13 @@ struct GLContext {
 	// Draw call queue
 	Common::List<DrawCall *> _drawCallsQueue;
 	Common::List<DrawCall *> _previousFrameDrawCallsQueue;
+	// presentBufferSimple(): the last frame's first draw calls (clears and
+	// blits over whole buffers), where the calls after them drew, and
+	// whether nobody was told what it changed (presentBuffer())
+	Common::Array<uint32> _lastBase;
+	Common::Array<Common::Rect> _lastDrawn;
+	Common::Rect _lastScreen;
+	bool _presentedUnseen;
 	int _currentAllocatorIndex;
 	LinearAllocator _drawCallAllocator[2];
 	bool _debugRectsEnabled;

@@ -203,6 +203,93 @@ end:
 	z += dzdx;
 }
 
+bool FrameBuffer::setupFastTextureSpan(FastTextureSpan &span, bool alphaTest) const {
+	const TexelBuffer *texture = _currentTexture;
+	if (!_pbufIs565 || !texture || !texture->_texels32 || !texture->_ratioShift ||
+	    texture->_widthShift < -8 || texture->_heightShift < -8 ||
+	    _wrapS != TGL_REPEAT || _wrapT != TGL_REPEAT || !_depthTestEnabled)
+		return false;
+
+	if (_depthFunc == TGL_LESS)
+		span.depthEqual = false;
+	else if (_depthFunc == TGL_LEQUAL)
+		span.depthEqual = true;
+	else
+		return false;
+
+	if (!alphaTest || !_alphaTestEnabled || _alphaTestFunc == TGL_ALWAYS)
+		span.minAlpha = 0;
+	else if (_alphaTestFunc == TGL_GEQUAL)
+		span.minAlpha = MAX(_alphaTestRefVal, 0);
+	else if (_alphaTestFunc == TGL_GREATER)
+		span.minAlpha = MAX(_alphaTestRefVal + 1, 0);
+	else
+		return false;
+
+	// TexelBuffer::getARGBAt(): the coordinate wrapped, scaled to the
+	// texture's size and its fraction dropped, in one shift
+	span.texels = texture->_texels32;
+	span.mask = texture->_fracTextureMask;
+	span.shiftS = ZB_POINT_ST_FRAC_BITS + texture->_widthShift;
+	span.shiftT = ZB_POINT_ST_FRAC_BITS + texture->_heightShift;
+	span.width = texture->_width;
+	span.shiftA = texture->_shiftA;
+	span.shiftR = texture->_shiftR;
+	span.shiftG = texture->_shiftG;
+	span.shiftB = texture->_shiftB;
+	const Graphics::PixelFormat rgba32 = Graphics::PixelFormat::createFormatRGBA32();
+	span.rgba32 = span.shiftA == rgba32.aShift && span.shiftR == rgba32.rShift &&
+	              span.shiftG == rgba32.gShift && span.shiftB == rgba32.bShift;
+	return true;
+}
+
+template <bool kDepthWrite, bool kDepthEqual, bool kRGBA32, bool kVertexAlpha>
+void FrameBuffer::putTexturedSpanFast(const FastTextureSpan &span, int fbOffset, uint *pz, int count,
+                                      uint &z, int &s, int &t, uint &r, uint &g, uint &b, uint &a,
+                                      int dzdx, int dsdx, int dtdx, int drdx, int dgdx, int dbdx, uint dadx) {
+	uint16 *pp = (uint16 *)_pbuf + fbOffset;
+	uint zz = z, rr = r, gg = g, bb = b, aa = a;
+	int ss = s, tt = t;
+
+	for (int i = 0; i < count; i++) {
+		// compareDepth(): TGL_LESS, TGL_LEQUAL
+		uint zDst = pz[i];
+		if (zDst < zz || (kDepthEqual && zDst == zz)) {
+			uint32 col = span.texels[((uint)(ss & span.mask) >> span.shiftS) +
+			                         ((uint)(tt & span.mask) >> span.shiftT) * span.width];
+			// applyModulation(), checkAlphaTest(), writePixel()
+			constexpr Graphics::PixelFormat rgba32 = Graphics::PixelFormat::createFormatRGBA32();
+			byte ca = (byte)(col >> (kRGBA32 ? rgba32.aShift : span.shiftA));
+			if (kVertexAlpha)
+				ca = fpMul(sat16_to_8(aa), ca);
+			if (ca >= span.minAlpha) {
+				byte cr = fpMul(sat16_to_8(rr), (byte)(col >> (kRGBA32 ? rgba32.rShift : span.shiftR)));
+				byte cg = fpMul(sat16_to_8(gg), (byte)(col >> (kRGBA32 ? rgba32.gShift : span.shiftG)));
+				byte cb = fpMul(sat16_to_8(bb), (byte)(col >> (kRGBA32 ? rgba32.bShift : span.shiftB)));
+				if (kDepthWrite)
+					pz[i] = zz;
+				pp[i] = ((cr & 0xF8) << 8) | ((cg & 0xFC) << 3) | (cb >> 3);
+			}
+		}
+		zz += dzdx;
+		ss += dsdx;
+		tt += dtdx;
+		if (kVertexAlpha)
+			aa += dadx;
+		rr += drdx;
+		gg += dgdx;
+		bb += dbdx;
+	}
+
+	z = zz;
+	s = ss;
+	t = tt;
+	r = rr;
+	g = gg;
+	b = bb;
+	a = aa;
+}
+
 template <bool kSmoothMode, bool kDepthWrite, bool kFogMode, bool kAlphaTestEnabled, bool kEnableScissor,
           bool kBlendingEnabled, bool kStencilEnabled, bool kDepthTestEnabled>
 void FrameBuffer::fillTriangle(ZBufferPoint *p0, ZBufferPoint *p1, ZBufferPoint *p2,
@@ -210,6 +297,8 @@ void FrameBuffer::fillTriangle(ZBufferPoint *p0, ZBufferPoint *p1, ZBufferPoint 
                                bool kInterpST, bool kInterpSTZ, bool stippleEnabled) {
 	const TexelBuffer *texture = nullptr;
 	float fdzdx = 0, fndzdx = 0, ndszdx = 0, ndtzdx = 0;
+	FastTextureSpan span;
+	bool fastSpan = false;
 
 	ZBufferPoint *tp, *pr1 = 0, *pr2 = 0, *l1 = 0, *l2 = 0;
 	float fdx1, fdx2, fdy1, fdy2, fz0, d1, d2;
@@ -364,8 +453,17 @@ void FrameBuffer::fillTriangle(ZBufferPoint *p0, ZBufferPoint *p1, ZBufferPoint 
 		a1 = p2->a;
 	}
 
+	// Only the stencil buffer written, with the same value whatever the depth
+	// test says (Grim Fandango's shadows mark the floor so): a fill
+	const bool stencilFill = colorMode == ColorMode::NoInterpolation && kStencilEnabled && !kDepthWrite &&
+		!kEnableScissor && _stencilTestFunc == TGL_ALWAYS && _stencilDpfail == TGL_REPLACE &&
+		_stencilDppass == TGL_REPLACE && _stencilWriteMask == 0xff;
+
 	if (colorMode != ColorMode::NoInterpolation && (kInterpST || kInterpSTZ)) {
 		texture = _currentTexture;
+		if (kSmoothMode && !kFogMode && !kEnableScissor && !kBlendingEnabled && !kStencilEnabled &&
+		    kDepthTestEnabled && kInterpZ && colorMode == ColorMode::Default)
+			fastSpan = setupFastTextureSpan(span, kAlphaTestEnabled);
 		fdzdx = (float)dzdx;
 		fndzdx = NB_INTERP * fdzdx;
 		ndszdx = NB_INTERP * dszdx;
@@ -496,6 +594,11 @@ void FrameBuffer::fillTriangle(ZBufferPoint *p0, ZBufferPoint *p1, ZBufferPoint 
 				if (kStencilEnabled) {
 					ps = ps1 + x1;
 				}
+				if (stencilFill) {
+					if (n >= 0)
+						memset(ps, (byte)_stencilRefVal, n + 1);
+					n = -1;
+				}
 				while (n >= 3) {
 					putPixelDepth<kDepthWrite, kEnableScissor, kStencilEnabled, kDepthTestEnabled>(pz, ps, 0, x, y, z, dzdx, stippleEnabled);
 					putPixelDepth<kDepthWrite, kEnableScissor, kStencilEnabled, kDepthTestEnabled>(pz, ps, 1, x, y, z, dzdx, stippleEnabled);
@@ -616,9 +719,13 @@ void FrameBuffer::fillTriangle(ZBufferPoint *p0, ZBufferPoint *p1, ZBufferPoint 
 						fz += fndzdx;
 						zinv = (float)(1.0 / fz);
 					}
-					for (int _a = 0; _a < NB_INTERP; _a++) {
-						putPixelTexture<kDepthWrite, kSmoothMode, kFogMode, kAlphaTestEnabled, kEnableScissor, kBlendingEnabled, kStencilEnabled, kDepthTestEnabled>
-						               (pp, texture, colorMode, _wrapS, _wrapT, pz, ps, _a, x, y, z, t, s, r, g, b, a, dzdx, dsdx, dtdx, drdx, dgdx, dbdx, dadx, fog, fog_r, fog_g, fog_b, dfdx);
+					if (fastSpan) {
+						putTexturedSpanFast<kDepthWrite>(span, pp, pz, NB_INTERP, z, s, t, r, g, b, a, dzdx, dsdx, dtdx, drdx, dgdx, dbdx, dadx);
+					} else {
+						for (int _a = 0; _a < NB_INTERP; _a++) {
+							putPixelTexture<kDepthWrite, kSmoothMode, kFogMode, kAlphaTestEnabled, kEnableScissor, kBlendingEnabled, kStencilEnabled, kDepthTestEnabled>
+							               (pp, texture, colorMode, _wrapS, _wrapT, pz, ps, _a, x, y, z, t, s, r, g, b, a, dzdx, dsdx, dtdx, drdx, dgdx, dbdx, dadx, fog, fog_r, fog_g, fog_b, dfdx);
+						}
 					}
 					pp += NB_INTERP;
 					if (kInterpZ) {
@@ -643,6 +750,10 @@ void FrameBuffer::fillTriangle(ZBufferPoint *p0, ZBufferPoint *p1, ZBufferPoint 
 					dtdx = (int)((dtzdx - tt * fdzdx) * zinv);
 				}
 
+				if (fastSpan && n >= 0) {
+					putTexturedSpanFast<kDepthWrite>(span, pp, pz, n + 1, z, s, t, r, g, b, a, dzdx, dsdx, dtdx, drdx, dgdx, dbdx, dadx);
+					n = -1;
+				}
 				while (n >= 0) {
 					putPixelTexture<kDepthWrite, kSmoothMode, kFogMode, kAlphaTestEnabled, kEnableScissor, kBlendingEnabled, kStencilEnabled, kDepthTestEnabled>
 					               (pp, texture, colorMode, _wrapS, _wrapT, pz, ps, 0, x, y, z, t, s, r, g, b, a, dzdx, dsdx, dtdx, drdx, dgdx, dbdx, dadx, fog, fog_r, fog_g, fog_b, dfdx);

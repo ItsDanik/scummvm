@@ -838,6 +838,9 @@ public:
 
 protected:
 	byte _fastMode = 0;
+#ifdef MISTER_HYBRID
+	int _misterFastMode = -1; // the OSD's Fast Mode, last seen
+#endif
 
 	byte _numActors = 0;
 	Actor **_actors = nullptr;	// Has _numActors elements

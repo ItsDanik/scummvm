@@ -59,6 +59,12 @@ OPL *create(Config::OplType type);
 } // End of namespace RetroWaveOPL3
 #endif // ENABLE_RETROWAVE_OPL3
 
+#ifdef MISTER_HYBRID
+namespace MiSTer {
+OPL *create(Config::OplType type);
+} // End of namespace MiSTer
+#endif // MISTER_HYBRID
+
 // Config implementation
 
 enum OplEmulator {
@@ -70,7 +76,8 @@ enum OplEmulator {
 	kNuked = 5,
 	kOPL2LPT = 6,
 	kOPL3LPT = 7,
-	kRWOPL3 = 8
+	kRWOPL3 = 8,
+	kMiSTer = 20
 #ifdef USE_NFM
 	,kNfmNokturnFM2 = 9,
 	kNfmNokturnFM3 = 10,
@@ -96,6 +103,11 @@ OPL::OPL() {
 const Config::EmulatorDescription Config::_drivers[] = {
 	{ "auto", "<default>", kAuto, kFlagOpl2 | kFlagDualOpl2 | kFlagOpl3 },
 	{ "null", _s("None"), kNull, kFlagOpl2 | kFlagDualOpl2 | kFlagOpl3 },
+#ifdef MISTER_HYBRID
+	// The YM3812 in the MiSTer core: first, so that "auto" picks it for OPL2
+	// music (the others go to an emulator)
+	{ "mister", _s("MiSTer FM chip"), kMiSTer, kFlagOpl2 },
+#endif
 #ifndef DISABLE_MAME_OPL
 	{ "mame", _s("MAME OPL emulator"), kMame, kFlagOpl2 },
 #endif
@@ -267,6 +279,17 @@ OPL *Config::create(DriverId driver, OplType type) {
 #ifdef USE_RETROWAVE
 	case kRWOPL3:
 		return RetroWaveOPL3::create(type);
+#endif
+
+#ifdef MISTER_HYBRID
+	case kMiSTer: {
+		OPL *opl = type == kOpl2 ? MiSTer::create(type) : nullptr;
+		if (opl)
+			return opl;
+		// a core without the chip, or OPL3 music: the DOSBox emulator
+		warning("The MiSTer FM chip plays OPL2 only, using the DOSBox OPL emulator");
+		return new DOSBox::OPL(type);
+	}
 #endif
 
 #ifdef USE_NFM

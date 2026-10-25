@@ -113,6 +113,7 @@ void tglDeleteBlitImage(TinyGL::BlitImage *blitImage);
 @param reference to the height variable
 */
 void tglGetBlitImageSize(TinyGL::BlitImage *blitImage, int &width, int &height);
+bool tglIsBlitImageOpaque(TinyGL::BlitImage *blitImage);
 
 /**
 @brief Provides a way to check if the image has been updated.

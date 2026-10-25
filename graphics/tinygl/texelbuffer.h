@@ -27,13 +27,14 @@
 namespace TinyGL {
 
 class TexelBuffer {
+	friend struct FrameBuffer; // FrameBuffer::setupFastTextureSpan()
 public:
 	TexelBuffer(uint width, uint height, uint textureSize, int internalformat);
 	virtual ~TexelBuffer() {};
 
 	inline int internalformat() const { return _internalformat; }
 
-	void getARGBAt(
+	FORCEINLINE void getARGBAt(
 		uint wrap_s, uint wrap_t,
 		int s, int t,
 		uint8 &a, uint8 &r, uint8 &g, uint8 &b
@@ -48,6 +49,15 @@ protected:
 	uint _width, _height, _fracTextureUnit, _fracTextureMask;
 	float _widthRatio, _heightRatio;
 	int _internalformat;
+	// For getARGBAt() above, which is called for every textured pixel: the
+	// texture's size to the texture unit's as a shift where it is a power of
+	// two (> 0 to the right, < 0 to the left; else _ratioShift false), and
+	// nearest 32-bit textures of 8 bits a component read inline, without
+	// the virtual call (_texels32, else nullptr)
+	bool _ratioShift;
+	int _widthShift, _heightShift;
+	const uint32 *_texels32;
+	byte _shiftA, _shiftR, _shiftG, _shiftB;
 };
 
 TexelBuffer *createNearestTexelBuffer(const byte *buf, const Graphics::PixelFormat &pf, uint format, uint type, uint width, uint height, uint textureSize, int internalformat);

@@ -50,6 +50,63 @@ namespace TinyGL {
 #define ZB_POINT_ST_FRAC_SHIFT     (ZB_POINT_ST_FRAC_BITS - 1)
 #define ZB_POINT_ST_MAX            ( (_textureSize << ZB_POINT_ST_FRAC_BITS) - 1 )
 
+#define ZB_POINT_ST_UNIT (1 << ZB_POINT_ST_FRAC_BITS)
+#define ZB_POINT_ST_FRAC_MASK (ZB_POINT_ST_UNIT - 1)
+
+// TexelBuffer::getARGBAt(), here to be inlined: it is called for every
+// textured pixel
+static inline uint texelWrap(uint wrap_mode, int coord, uint _fracTextureUnit, uint _fracTextureMask) {
+	switch (wrap_mode) {
+	case TGL_MIRRORED_REPEAT:
+		if (coord & _fracTextureUnit)
+			return _fracTextureMask - (coord & _fracTextureMask);
+		return coord & _fracTextureMask;
+	case TGL_CLAMP_TO_EDGE:
+		if (coord < 0)
+			return 0;
+		if ((uint) coord > _fracTextureMask)
+			return _fracTextureMask;
+		return coord;
+	default:
+		// Fall through
+	case TGL_REPEAT:
+		return coord & _fracTextureMask;
+	}
+}
+
+inline void TexelBuffer::getARGBAt(
+	uint wrap_s, uint wrap_t,
+	int s, int t,
+	uint8 &a, uint8 &r, uint8 &g, uint8 &b
+) const {
+	uint x, y;
+	x = texelWrap(wrap_s, s, _fracTextureUnit, _fracTextureMask);
+	y = texelWrap(wrap_t, t, _fracTextureUnit, _fracTextureMask);
+	if (_ratioShift) {
+		// the same as the multiplication below: by a power of two
+		x = _widthShift >= 0 ? x >> _widthShift : x << -_widthShift;
+		y = _heightShift >= 0 ? y >> _heightShift : y << -_heightShift;
+	} else {
+		x = x * _widthRatio;
+		y = y * _heightRatio;
+	}
+	uint pixel = (x >> ZB_POINT_ST_FRAC_BITS) + (y >> ZB_POINT_ST_FRAC_BITS) * _width;
+	if (_texels32) {
+		uint32 col = _texels32[pixel];
+		a = col >> _shiftA;
+		r = col >> _shiftR;
+		g = col >> _shiftG;
+		b = col >> _shiftB;
+		return;
+	}
+	getARGBAt(
+		pixel,
+		x & ZB_POINT_ST_FRAC_MASK, y & ZB_POINT_ST_FRAC_MASK,
+		a, r, g, b
+	);
+}
+
+
 #define ZB_POINT_RED_BITS         16
 #define ZB_POINT_RED_FRAC_BITS    8
 #define ZB_POINT_RED_FRAC_SHIFT   (ZB_POINT_RED_FRAC_BITS - 1)
@@ -104,6 +161,25 @@ struct ZBufferPoint {
 			a == other.a;
 	}
 };
+
+static inline byte satAdd(byte a, byte b) {
+	// from: https://web.archive.org/web/20190213215419/https://locklessinc.com/articles/sat_arithmetic/
+	byte r = a + b;
+	return (byte)(r | -(r < a));
+}
+
+static inline byte sat16_to_8(uint32 x) {
+	x = (x + 128) >> 8; // rounding 16 to 8 
+	return (byte)(x | -!!(x >> 8)); // branchfree saturation
+}
+
+static inline byte fpMul(byte a, byte b) {
+	// from: https://community.khronos.org/t/precision-curiosity-1-255-or-1-256/40539/11
+	// correct would be (a*b)/255 but that is slow, instead we use (a*b) * 257/256 / 256
+	// this also implicitly saturates
+	uint32 r = a * b;
+	return (byte)((r + (r >> 8) + 127) >> 8);
+}
 
 struct FrameBuffer {
 	FrameBuffer(int width, int height, const Graphics::PixelFormat &format, bool enableStencilBuffer);
@@ -360,7 +436,7 @@ private:
 	}
 
 	template <bool kDepthWrite, bool kSmoothMode, bool kFogMode, bool kEnableAlphaTest, bool kEnableScissor, bool kEnableBlending, bool kStencilEnabled, bool kDepthTestEnabled>
-	void putPixelNoTexture(int fbOffset, uint *pz, byte *ps, int _a,
+	FORCEINLINE void putPixelNoTexture(int fbOffset, uint *pz, byte *ps, int _a,
 	                       int x, int y, uint &z, uint &r, uint &g, uint &b, uint &a,
 	                       int &dzdx, int &drdx, int &dgdx, int &dbdx, uint dadx,
 	                       uint &fog, int fog_r, int fog_g, int fog_b, int &dfdx,
@@ -373,7 +449,7 @@ private:
 	};
 
 	template <bool kDepthWrite, bool kSmoothMode, bool kFogMode, bool kEnableAlphaTest, bool kEnableScissor, bool kEnableBlending, bool kStencilEnabled, bool kDepthTestEnabled>
-	void putPixelTexture(int fbOffset, const TexelBuffer *texture,
+	FORCEINLINE void putPixelTexture(int fbOffset, const TexelBuffer *texture,
 						 FrameBuffer::ColorMode colorMode,
 	                     uint wrap_s, uint wrap_t, uint *pz, byte *ps, int _a,
 	                     int x, int y, uint &z, int &t, int &s,
@@ -381,8 +457,55 @@ private:
 	                     int &dzdx, int &dsdx, int &dtdx, int &drdx, int &dgdx, int &dbdx, uint dadx,
 	                     uint &fog, int fog_r, int fog_g, int fog_b, int &dfdx);
 
+	// A textured span of the most common case, the same pixels as
+	// putPixelTexture() would draw one by one, in a tight loop: an RGB565
+	// frame buffer, a nearest 32-bit texture repeated both ways, modulated
+	// by the smooth colour, a depth test of TGL_LESS or TGL_LEQUAL, at most
+	// an alpha test of TGL_GEQUAL or TGL_GREATER, no blending, fog, stencil
+	// or scissor (Grim Fandango's models: about four times as fast on the
+	// MiSTer's ARM)
+	struct FastTextureSpan {
+		const uint32 *texels;
+		uint mask, shiftS, shiftT, width;
+		byte shiftA, shiftR, shiftG, shiftB;
+		int minAlpha;
+		bool depthEqual;
+		bool rgba32; // Graphics::PixelFormat::createFormatRGBA32(): constant shifts
+	};
+
+	bool setupFastTextureSpan(FastTextureSpan &span, bool alphaTest) const;
+
+	template <bool kDepthWrite, bool kDepthEqual, bool kRGBA32, bool kVertexAlpha>
+	FORCEINLINE void putTexturedSpanFast(const FastTextureSpan &span, int fbOffset, uint *pz, int count,
+	                                     uint &z, int &s, int &t, uint &r, uint &g, uint &b, uint &a,
+	                                     int dzdx, int dsdx, int dtdx, int drdx, int dgdx, int dbdx, uint dadx);
+
+	template <bool kDepthWrite, bool kDepthEqual>
+	FORCEINLINE void putTexturedSpanFast(const FastTextureSpan &span, int fbOffset, uint *pz, int count,
+	                                     uint &z, int &s, int &t, uint &r, uint &g, uint &b, uint &a,
+	                                     int dzdx, int dsdx, int dtdx, int drdx, int dgdx, int dbdx, uint dadx) {
+		// the vertices' alpha opaque all along (Grim's models): the texel's
+		// own, fpMul(255, x) being x
+		if (!span.rgba32)
+			putTexturedSpanFast<kDepthWrite, kDepthEqual, false, true>(span, fbOffset, pz, count, z, s, t, r, g, b, a, dzdx, dsdx, dtdx, drdx, dgdx, dbdx, dadx);
+		else if (dadx == 0 && sat16_to_8(a) == 255)
+			putTexturedSpanFast<kDepthWrite, kDepthEqual, true, false>(span, fbOffset, pz, count, z, s, t, r, g, b, a, dzdx, dsdx, dtdx, drdx, dgdx, dbdx, dadx);
+		else
+			putTexturedSpanFast<kDepthWrite, kDepthEqual, true, true>(span, fbOffset, pz, count, z, s, t, r, g, b, a, dzdx, dsdx, dtdx, drdx, dgdx, dbdx, dadx);
+	}
+
+	template <bool kDepthWrite>
+	FORCEINLINE void putTexturedSpanFast(const FastTextureSpan &span, int fbOffset, uint *pz, int count,
+	                                     uint &z, int &s, int &t, uint &r, uint &g, uint &b, uint &a,
+	                                     int dzdx, int dsdx, int dtdx, int drdx, int dgdx, int dbdx, uint dadx) {
+		if (span.depthEqual)
+			putTexturedSpanFast<kDepthWrite, true>(span, fbOffset, pz, count, z, s, t, r, g, b, a, dzdx, dsdx, dtdx, drdx, dgdx, dbdx, dadx);
+		else
+			putTexturedSpanFast<kDepthWrite, false>(span, fbOffset, pz, count, z, s, t, r, g, b, a, dzdx, dsdx, dtdx, drdx, dgdx, dbdx, dadx);
+	}
+
 	template <bool kDepthWrite, bool kEnableScissor, bool kStencilEnabled, bool kDepthTestEnabled>
-	void putPixelDepth(uint *pz, byte *ps, int _a, int x, int y, uint &z, int &dzdx,
+	FORCEINLINE void putPixelDepth(uint *pz, byte *ps, int _a, int x, int y, uint &z, int &dzdx,
 					   bool stippleEnabled);
 
 
@@ -431,11 +554,11 @@ private:
 
 	template <bool kEnableAlphaTest, bool kBlendingEnabled, bool kDepthWrite>
 	FORCEINLINE void writePixel(int pixel, byte aSrc, byte rSrc, byte gSrc, byte bSrc, uint z) {
-		writePixel<kEnableAlphaTest, kBlendingEnabled, kDepthWrite, false>(pixel, aSrc, rSrc, gSrc, bSrc, z, 0.0f, 0, 0, 0);
+		writePixel<kEnableAlphaTest, kBlendingEnabled, kDepthWrite, false>(pixel, aSrc, rSrc, gSrc, bSrc, z, 0, 0, 0, 0);
 	}
 
 	template <bool kEnableAlphaTest, bool kBlendingEnabled, bool kDepthWrite, bool kFogMode>
-	FORCEINLINE void writePixel(int pixel, byte aSrc, byte rSrc, byte gSrc, byte bSrc, float z, uint fog, byte fog_r, byte fog_g, byte fog_b) {
+	FORCEINLINE void writePixel(int pixel, byte aSrc, byte rSrc, byte gSrc, byte bSrc, uint z, uint fog, byte fog_r, byte fog_g, byte fog_b) {
 		if (kEnableAlphaTest) {
 			if (!checkAlphaTest(aSrc))
 				return;
@@ -468,7 +591,10 @@ private:
 		}
 
 		if (!kBlendingEnabled) {
-			setPixelAt(pixel, _pbufFormat.ARGBToColor(aSrc, rSrc, gSrc, bSrc));
+			if (_pbufIs565)
+				((uint16 *)_pbuf)[pixel] = ((rSrc & 0xF8) << 8) | ((gSrc & 0xFC) << 3) | (bSrc >> 3);
+			else
+				setPixelAt(pixel, _pbufFormat.ARGBToColor(aSrc, rSrc, gSrc, bSrc));
 		} else {
 			byte rDst, gDst, bDst, aDst;
 			_pbufFormat.colorToARGB(getPixelAt(pixel), aDst, rDst, gDst, bDst);
@@ -812,9 +938,14 @@ private:
 		byte &texA, byte &texR, byte &texG, byte &texB);
 
 	// the same as GL_TEXTURE_ENV_MODE == GL_MODULATE as fast-path for the default mode
-	void applyModulation(
+	FORCEINLINE void applyModulation(
 		uint previousA, uint previousR, uint previousG, uint previousB,
-		byte &texA, byte &texR, byte &texG, byte &texB);
+		byte &texA, byte &texR, byte &texG, byte &texB) {
+		texA = fpMul(sat16_to_8(previousA), texA);
+		texR = fpMul(sat16_to_8(previousR), texR);
+		texG = fpMul(sat16_to_8(previousG), texG);
+		texB = fpMul(sat16_to_8(previousB), texB);
+	}
 
 	Buffer _offscreenBuffer;
 	byte *_pbuf;
@@ -823,6 +954,7 @@ private:
 	int _pbufPitch;
 	Graphics::PixelFormat _pbufFormat;
 	int _pbufBpp;
+	bool _pbufIs565; // RGB565, written without the format's conversion
 
 	uint *_zbuf;
 	byte *_sbuf;

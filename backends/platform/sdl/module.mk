@@ -54,6 +54,19 @@ MODULE_OBJS += \
 	miyoo/miyoo.o
 endif
 
+ifdef MISTER_HYBRID
+MODULE_OBJS += \
+	mister/mister-main.o \
+	mister/mister.o \
+	mister/mister-events.o \
+	mister/mister-graphics.o \
+	mister/mister-midi.o \
+	mister/mister-mixer.o \
+	mister/mister-opl.o \
+	mister/mister-prof.o \
+	mister/mister_port.o
+endif
+
 ifdef MORPHOS
 MODULE_OBJS += \
 	morphos/morphos-main.o \

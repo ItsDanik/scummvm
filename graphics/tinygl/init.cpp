@@ -359,6 +359,7 @@ void GLContext::init(int screenW, int screenH, Graphics::PixelFormat pixelFormat
 	_drawCallAllocator[1].initialize(drawCallMemorySize);
 	_debugRectsEnabled = false;
 	_profilingEnabled = false;
+	_presentedUnseen = false;
 }
 
 void GLContext::deinit() {
