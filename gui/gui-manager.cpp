@@ -120,9 +120,16 @@ void GuiManager::initIconsSet() {
 }
 
 void GuiManager::computeScaleFactor() {
+#ifdef MISTER_HYBRID
+	// the safe area is the MiSTer's margin for CRTs, inside the GUI's size
+	// (backends/platform/sdl/mister/mister-graphics.cpp)
+	const uint16 w = g_system->getOverlayWidth();
+	const uint16 h = g_system->getOverlayHeight();
+#else
 	const Common::Rect safeArea = g_system->getSafeOverlayArea();
 	const uint16 w = safeArea.width();
 	const uint16 h = safeArea.height();
+#endif
 
 	_scaleFactor = g_system->getHiDPIScreenFactor();
 	if (ConfMan.hasKey("gui_scale"))

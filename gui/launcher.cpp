@@ -1932,7 +1932,7 @@ void LauncherGrid::build() {
 	new StaticTextWidget(this, "LauncherGrid.GridItemsPerRowDesc", _("Icons per row:"));
 	_gridItemSizeSlider = new SliderWidget(this, "LauncherGrid.GridItemsPerRow", Common::U32String(), kItemSizeCmd);
 #ifdef MISTER_HYBRID
-	// 3 or more, the sizes the port's icons are made for (149 and 104 pixels,
+	// 3 or more, the sizes the port's icons are made for (143 and 99 pixels,
 	// tools/make_icons.py of ScummVM_MiSTer): a bigger icon is a bigger image
 	// to decode on the MiSTer's ARM
 	_gridItemSizeSlider->setMinValue(3);
@@ -2058,9 +2058,10 @@ void LauncherArt::reflowLayout() {
 	if (!g_gui.xmlEval()->getVar("Globals.LauncherArtSupported", 0))
 		return;
 #ifndef DISABLE_FANCY_THEMES
-	// the logo in one line with the search, as in the in-game menu
+	// the logo in its size for the view, the search and the grouping beside
+	// it (the theme's logo_art.bmp, tools/make_theme.py)
 	if (_logo)
-		_logo->setGfxFromTheme(ThemeEngine::kImageLogoSmall);
+		_logo->setGfxFromTheme("logo_art.bmp");
 #endif
 	// the size of the artwork's place may have changed
 	_artTarget.clear();

@@ -44,6 +44,8 @@ public:
 	uint getDefaultScaleFactor() const override;
 	bool setScaler(uint mode, int factor) override;
 
+	Common::Rect getSafeOverlayArea(int16 *width, int16 *height) const override;
+
 protected:
 	void setupHardwareSize() override;
 	void initGraphicsSurface() override;

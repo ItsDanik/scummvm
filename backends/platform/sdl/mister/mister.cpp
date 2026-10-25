@@ -87,7 +87,7 @@ void OSystem_SDL_MiSTer::initBackend() {
 	if (!ConfMan.hasKey("gui_launcher_chooser", Common::ConfigManager::kApplicationDomain))
 		ConfMan.set("gui_launcher_chooser", "art", Common::ConfigManager::kApplicationDomain);
 	// at least 3 icons a row, as the launcher's slider allows (gui/launcher.cpp):
-	// the icons are made for 3 and 4 (149 and 104 pixels, tools/make_icons.py)
+	// the icons are made for 3 and 4 (143 and 99 pixels, tools/make_icons.py)
 	if (ConfMan.hasKey("grid_items_per_row") && ConfMan.getInt("grid_items_per_row") < 3)
 		ConfMan.setInt("grid_items_per_row", 3, Common::ConfigManager::kApplicationDomain);
 	ConfMan.registerDefault("output_rate", 44100);

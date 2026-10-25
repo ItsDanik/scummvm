@@ -77,6 +77,24 @@ bool MisterGraphicsManager::setScaler(uint mode, int factor) {
 	return SurfaceSdlGraphicsManager::setScaler(getDefaultScaler(), 1);
 }
 
+// A CRT hides its picture's edges (Danik, 2026-10-25): ScummVM's GUI keeps 10
+// pixels from them at 640x400 / 640x480 and 5 at 320x200 (the same width on
+// the screen), every dialog, popup and message; the backgrounds of those
+// that fill the screen still reach its edges (gui/ThemeLayout.cpp). The
+// layouts are still picked by the whole size (MISTER_HYBRID in
+// gui/gui-manager.cpp): ScummVM sizes its GUI by this area otherwise, and
+// would make 620x380 of 640x400 the low resolution layout and scale the one
+// of 320x200 by 0.95.
+Common::Rect MisterGraphicsManager::getSafeOverlayArea(int16 *width, int16 *height) const {
+	const int16 w = getOverlayWidth(), h = getOverlayHeight();
+	const int16 m = w >= 640 ? 10 : 5;
+	if (width)
+		*width = w;
+	if (height)
+		*height = h;
+	return Common::Rect(m, m, w - m, h - m);
+}
+
 // The game's own size: a 15kHz screen shows 200 lines as 4:3 by itself, so
 // no aspect ratio correction (ScummVM's default, which made 320x240 of them)
 void MisterGraphicsManager::setupHardwareSize() {
