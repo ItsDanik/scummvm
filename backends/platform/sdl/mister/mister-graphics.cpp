@@ -60,11 +60,16 @@ bool MisterGraphicsManager::getFeatureState(OSystem::Feature f) const {
 // With no game running the size is the launcher's, which ScummVM asks for
 // as 320x200 (base/main.cpp): the OSD's Launcher line can make it 640x480,
 // ScummVM's high resolution layout. Games get the size they ask for.
+// The launcher takes a frame at every field of 480i (field rate, host
+// version 18; Danik, 2026-10-28): 60 pictures a second on a CRT, the pointer
+// and the list's scrolling as smooth as at 320x200. A game never does, nor
+// ScummVM's menu over it (the game's picture, at the game's rate).
 void MisterGraphicsManager::initSize(uint w, uint h, const Graphics::PixelFormat *format) {
 	if (!g_engine && MiSTer_LauncherHires()) {
 		w = 640;
 		h = 480;
 	}
+	MiSTer_SetFieldRate(!g_engine);
 	SurfaceSdlGraphicsManager::initSize(w, h, format);
 }
 

@@ -71,6 +71,10 @@ int MiSTer_FastMode();
 bool MiSTer_MusicMidi();
 bool MiSTer_PiMT32();
 
+// A new frame at every field of an interlaced mode (true: ScummVM's
+// launcher) or every second one (a game)
+void MiSTer_SetFieldRate(bool on);
+
 // The Cheats page's line is greyed out while no SCUMM game runs (menu mask
 // bit 0, "D0")
 void MiSTer_SetScummRunning(bool running);

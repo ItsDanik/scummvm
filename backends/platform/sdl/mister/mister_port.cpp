@@ -91,6 +91,10 @@ bool MiSTer_PiMT32() {
 	return MH_MidiPiConnected() && !((high >> (96 - 64)) & 1) && ((high >> (97 - 64)) & 1);
 }
 
+void MiSTer_SetFieldRate(bool on) {
+	MH_SetFieldRate(on);
+}
+
 void MiSTer_SetScummRunning(bool running) {
 	MH_SetMenuMask(running ? 0 : 1);
 }
