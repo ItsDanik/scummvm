@@ -1125,6 +1125,21 @@ void GfxTinyGL::createTexture(Texture *texture, const uint8 *data, const CMap *c
 		tglTexImage2D(TGL_TEXTURE_2D, 0, TGL_RGBA, texture->_width, texture->_height, 0, TGL_RGBA, TGL_UNSIGNED_BYTE, texdata);
 		delete[] texdata;
 	} else {
+#ifdef MISTER_HYBRID
+		// EMI's 24-bit textures made 32-bit, fully opaque: TinyGL's fast
+		// textured span takes only 32-bit textures, and the same texels
+		if (texture->_bpp == 3) {
+			const int count = texture->_width * texture->_height;
+			uint8 *texdata = new uint8[count * 4];
+			for (int i = 0; i < count; i++) {
+				memcpy(texdata + 4 * i, data + 3 * i, 3);
+				texdata[4 * i + 3] = 0xff;
+			}
+			tglTexImage2D(TGL_TEXTURE_2D, 0, TGL_RGBA, texture->_width, texture->_height, 0, TGL_RGBA, TGL_UNSIGNED_BYTE, texdata);
+			delete[] texdata;
+			return;
+		}
+#endif
 		TGLint format = (texture->_bpp == 4) ? TGL_RGBA : TGL_RGB;
 
 		tglTexImage2D(TGL_TEXTURE_2D, 0, format, texture->_width, texture->_height, 0, format, TGL_UNSIGNED_BYTE, data);
