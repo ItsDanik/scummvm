@@ -88,6 +88,7 @@ MisterOptionsDialog::MisterOptionsDialog(Mode mode, const Common::String &domain
 	_list = new ScrollContainerWidget(this, "MisterOptions.List", "MisterOptions_List");
 	_list->setBackgroundType(ThemeEngine::kWidgetBackgroundNo);
 	_list->setTarget(this);
+	_list->setEdgeSpacing(2);
 
 	if (_mode == kModeGlobal)
 		buildGlobal();

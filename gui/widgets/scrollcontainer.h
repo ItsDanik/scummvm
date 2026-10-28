@@ -44,12 +44,20 @@ class ScrollContainerWidget: public Widget, public CommandSender {
 	bool _isDragging = false;
 	float _scrollPos = 0.0f;
 	FluidScroller *_fluidScroller = nullptr;
+#ifdef MISTER_HYBRID
+	int _edgeSpacing = -1;
+#endif
 
 	void recalc();
 	void applyScrollPos();
 
 public:
 	ScrollContainerWidget(GuiObject *boss, int x, int y, int w, int h, uint32 reflowCmd = 0);
+#ifdef MISTER_HYBRID
+	// The space counted above and below the widgets, -1 the font's height:
+	// a list that fits gets no scrollbar (the MiSTer's options)
+	void setEdgeSpacing(int spacing) { _edgeSpacing = spacing; }
+#endif
 	ScrollContainerWidget(GuiObject *boss, const Common::String &name, const Common::String &dialogName, uint32 reflowCmd = 0);
 	~ScrollContainerWidget() override;
 

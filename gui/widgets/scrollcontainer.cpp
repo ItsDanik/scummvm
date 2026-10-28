@@ -161,7 +161,11 @@ void ScrollContainerWidget::recalc() {
 	_limitH = _h;
 
 	//calculate virtual height
+#ifdef MISTER_HYBRID
+	const int spacing = _edgeSpacing >= 0 ? _edgeSpacing : g_gui.xmlEval()->getVar("Globals.Font.Height", 16); //on the bottom
+#else
 	const int spacing = g_gui.xmlEval()->getVar("Globals.Font.Height", 16); //on the bottom
+#endif
 	int min = spacing, max = 0;
 	Widget *ptr = _firstWidget;
 	while (ptr) {
