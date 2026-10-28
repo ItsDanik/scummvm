@@ -45,6 +45,7 @@ FrameBuffer::FrameBuffer(int width, int height, const Graphics::PixelFormat &for
 	_pbufPitch = (_pbufWidth * _pbufBpp + 3) & ~3;
 
 	_pbuf = (byte *)gl_zalloc(_pbufHeight * _pbufPitch * sizeof(byte));
+	_ownPbuf = _pbuf;
 	_zbuf = (uint *)gl_zalloc(_pbufWidth * _pbufHeight * sizeof(uint));
 	if (enableStencilBuffer)
 		_sbuf = (byte *)gl_zalloc(_pbufWidth * _pbufHeight * sizeof(byte));
@@ -60,7 +61,7 @@ FrameBuffer::FrameBuffer(int width, int height, const Graphics::PixelFormat &for
 }
 
 FrameBuffer::~FrameBuffer() {
-	gl_free(_pbuf);
+	gl_free(_ownPbuf);
 	gl_free(_zbuf);
 	if (_sbuf)
 		gl_free(_sbuf);

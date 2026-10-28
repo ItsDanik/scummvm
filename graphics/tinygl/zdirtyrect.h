@@ -126,8 +126,10 @@ private:
 		}
 	};
 
-	ClearBufferState captureState() const;
-	void applyState(const ClearBufferState &state, const Common::Rect *clippingRectangle) const;
+	// (GLContext::presentBufferSimple() keeps the context's own state with them)
+	friend struct GLContext;
+	static ClearBufferState captureState();
+	static void applyState(const ClearBufferState &state, const Common::Rect *clippingRectangle);
 
 	ClearBufferState _clearState;
 };
@@ -140,6 +142,13 @@ public:
 	bool operator==(const RasterizationDrawCall &other) const;
 	void execute(bool restoreState, const Common::Rect *clippingRectangle = nullptr) const override;
 	Common::Rect drawnRegion() override;
+	// GLContext::glopEnd() without dirty rectangles: a draw that comes right
+	// after this one, with the same state, is drawn with it (one state to
+	// apply and one region for both; Grim Fandango draws each face of its
+	// models on its own): whether the context's state is this one's, and
+	// the context's vertices added to it
+	bool takesContextDraw() const;
+	void addContextDraw();
 
 	void *operator new(size_t size) {
 		return Internal::allocateFrame(size);
@@ -148,10 +157,22 @@ public:
 	void operator delete(void *p) { }
 private:
 	void computeDirtyRegion();
+	void addRegion(GLVertex *vertex, int vertexCount);
+	// the context's begin_type, vertex and vertex_cnt drawn
+	static void drawPrimitive(GLContext *c);
 	typedef void (*gl_draw_triangle_func_ptr)(GLContext *c, TinyGL::GLVertex *p0, TinyGL::GLVertex *p1, TinyGL::GLVertex *p2);
 	int _vertexCount;
 	GLVertex *_vertex;
 	gl_draw_triangle_func_ptr _drawTriangleFront, _drawTriangleBack;
+	// the draws added to the first one (addContextDraw()), in their order
+	struct Primitive {
+		int beginType;
+		int vertexCount;
+		GLVertex *vertex;
+		Primitive *next;
+	};
+	Primitive *_more;
+	Primitive **_moreEnd;
 
 	struct RasterizationState {
 		bool enableScissor;
@@ -208,8 +229,10 @@ private:
 
 	RasterizationState _state;
 
-	RasterizationState captureState() const;
-	void applyState(const RasterizationState &state, const Common::Rect *clippingRectangle) const;
+	// (GLContext::presentBufferSimple() keeps the context's own state with them)
+	friend struct GLContext;
+	static RasterizationState captureState();
+	static void applyState(const RasterizationState &state, const Common::Rect *clippingRectangle);
 };
 
 // Encapsulate a blit call: it might execute either a color buffer or z buffer blit.
@@ -271,8 +294,10 @@ private:
 		}
 	};
 
-	BlittingState captureState() const;
-	void applyState(const BlittingState &state, const Common::Rect *clippingRectangle) const;
+	// (GLContext::presentBufferSimple() keeps the context's own state with them)
+	friend struct GLContext;
+	static BlittingState captureState();
+	static void applyState(const BlittingState &state, const Common::Rect *clippingRectangle);
 
 	BlittingState _blitState;
 };

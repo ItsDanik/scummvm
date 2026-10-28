@@ -566,7 +566,11 @@ public:
 };
 
 extern GLContext *gl_ctx;
-GLContext *gl_get_context();
+// inline: TinyGL asks for it in nearly every one of its functions
+inline GLContext *gl_get_context() {
+	assert(gl_ctx);
+	return gl_ctx;
+}
 
 #define VERTEX_ARRAY    0x0001
 #define COLOR_ARRAY     0x0002

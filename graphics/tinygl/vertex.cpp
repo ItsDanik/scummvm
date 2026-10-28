@@ -258,7 +258,14 @@ void GLContext::glopEnd(GLParam *) {
 	assert(in_begin == 1);
 
 	if (vertex_cnt > 0) {
-		issueDrawCall(new RasterizationDrawCall());
+		// a draw of the same state as the one before goes into it
+		// (RasterizationDrawCall::takesContextDraw())
+		DrawCall *last = _enableDirtyRectangles || _drawCallsQueue.empty() ? nullptr : _drawCallsQueue.back();
+		if (last && last->getType() == DrawCall::DrawCall_Rasterization &&
+		    ((RasterizationDrawCall *)last)->takesContextDraw())
+			((RasterizationDrawCall *)last)->addContextDraw();
+		else
+			issueDrawCall(new RasterizationDrawCall());
 	}
 
 	in_begin = 0;

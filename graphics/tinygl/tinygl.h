@@ -40,6 +40,11 @@ void setContext(ContextHandle *handle);
 void presentBuffer();
 void presentBuffer(Common::List<Common::Rect> &dirtyAreas);
 void getSurfaceRef(Graphics::Surface &surface);
+// The color buffer drawn into, in place of TinyGL's own: memory the caller
+// keeps, of the frame buffer's size, format and pitch (a backend's screen,
+// so that it needs no copy); nullptr gives TinyGL's own back. What the
+// buffers had is gone: the next frame is drawn whole.
+void setColorBuffer(byte *pixels);
 Graphics::Surface *copyFromFrameBuffer(const Graphics::PixelFormat &dstFormat);
 
 } // end of namespace TinyGL

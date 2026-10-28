@@ -193,6 +193,12 @@ struct FrameBuffer {
 		return _pbuf;
 	}
 
+	// setColorBuffer(): another color buffer, nullptr the own one
+	void setPixelBuffer(byte *pixels) {
+		_pbuf = pixels ? pixels : _ownPbuf;
+		_offscreenBuffer.pbuf = _pbuf;
+	}
+
 	int getPixelBufferWidth() {
 		return _pbufWidth;
 	}
@@ -949,6 +955,7 @@ private:
 
 	Buffer _offscreenBuffer;
 	byte *_pbuf;
+	byte *_ownPbuf; // allocated here (setPixelBuffer())
 	int _pbufWidth;
 	int _pbufHeight;
 	int _pbufPitch;

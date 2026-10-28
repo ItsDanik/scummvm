@@ -101,21 +101,30 @@ void MiSTer_ProfStart() {
 	setitimer(ITIMER_PROF, &t, nullptr);
 }
 
+// The frames shown a second, and the game thread's own time a frame (its
+// CPU time, without the waits for the field): the frames shown go by
+// whole fields (in 480i 29.8 or 14.9 a second), so a frame made faster
+// shows in them only once it takes a field less
 void MiSTer_ProfFrame() {
 	static int frames;
-	static struct timespec last;
-	struct timespec now;
+	static struct timespec last, lastCpu;
+	struct timespec now, cpu;
 
 	if (profFd < 0)
 		return;
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	if (!last.tv_sec)
+	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cpu);
+	if (!last.tv_sec) {
 		last = now;
+		lastCpu = cpu;
+	}
 	frames++;
 	double s = (now.tv_sec - last.tv_sec) + (now.tv_nsec - last.tv_nsec) / 1e9;
 	if (s >= 5) {
-		fprintf(stderr, "MiSTer prof: %.1f frames/s\n", frames / s);
+		double work = (cpu.tv_sec - lastCpu.tv_sec) + (cpu.tv_nsec - lastCpu.tv_nsec) / 1e9;
+		fprintf(stderr, "MiSTer prof: %.1f frames/s, %.1f ms of work a frame\n", frames / s, 1000 * work / frames);
 		frames = 0;
 		last = now;
+		lastCpu = cpu;
 	}
 }

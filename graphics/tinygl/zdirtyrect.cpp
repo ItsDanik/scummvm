@@ -313,15 +313,24 @@ void GLContext::presentBufferSimple(Common::List<Common::Rect> &dirtyAreas) {
 
 	const bool partial = !base.empty() && base == _lastBase && screen == _lastScreen;
 	bool inBase = partial;
+	// Each call sets the whole of its state before it draws: the context's
+	// own is given back once, after all of them, not after each one (Grim
+	// Fandango makes a call of every face of its models)
+	const RasterizationDrawCall::RasterizationState rasterizationState = RasterizationDrawCall::captureState();
+	const BlittingDrawCall::BlittingState blittingState = BlittingDrawCall::captureState();
+	const ClearBufferDrawCall::ClearBufferState clearState = ClearBufferDrawCall::captureState();
 	for (auto it = _drawCallsQueue.begin(); it != _drawCallsQueue.end(); ++it) {
 		inBase &= it != baseEnd;
 		if (inBase) {
 			for (const auto &region : _lastDrawn)
-				(*it)->execute(true, &region);
+				(*it)->execute(false, &region);
 		} else {
-			(*it)->execute(true);
+			(*it)->execute(false);
 		}
 	}
+	ClearBufferDrawCall::applyState(clearState, nullptr);
+	BlittingDrawCall::applyState(blittingState, nullptr);
+	RasterizationDrawCall::applyState(rasterizationState, nullptr);
 
 	if (partial && !_presentedUnseen) {
 		for (const auto &region : _lastDrawn)
@@ -389,17 +398,57 @@ RasterizationDrawCall::RasterizationDrawCall() : DrawCall(DrawCall_Rasterization
 	_drawTriangleFront = c->draw_triangle_front;
 	_drawTriangleBack = c->draw_triangle_back;
 	memcpy(_vertex, c->vertex, sizeof(GLVertex) * _vertexCount);
+	_more = nullptr;
+	_moreEnd = &_more;
 	_state = captureState();
-	if (c->_enableDirtyRectangles) {
-		computeDirtyRegion();
-	}
+	// also without dirty rectangles (drawnRegion()): now, while the vertices
+	// are in the cache
+	computeDirtyRegion();
+}
+
+bool RasterizationDrawCall::takesContextDraw() const {
+	const GLContext *c = gl_get_context();
+	if (c->draw_triangle_front != (gl_draw_triangle_func)_drawTriangleFront ||
+	    c->draw_triangle_back != (gl_draw_triangle_func)_drawTriangleBack)
+		return false;
+	// all of the state, also what its operator== leaves out; the kind of
+	// draw (begin_type) is each draw's own
+	RasterizationState state = captureState();
+	state.beginType = _state.beginType;
+	return state == _state &&
+		state.wrapS == _state.wrapS && state.wrapT == _state.wrapT &&
+		!memcmp(&state.textureEnv, &_state.textureEnv, sizeof(state.textureEnv)) &&
+		state.polygonStippleEnabled == _state.polygonStippleEnabled &&
+		state.stippleColor == _state.stippleColor &&
+		state.two_color_stipple_enabled == _state.two_color_stipple_enabled &&
+		!memcmp(state.polygonStipplePattern, _state.polygonStipplePattern, sizeof(state.polygonStipplePattern));
+}
+
+void RasterizationDrawCall::addContextDraw() {
+	const GLContext *c = gl_get_context();
+	Primitive *primitive = (Primitive *)Internal::allocateFrame(sizeof(Primitive));
+	primitive->beginType = c->begin_type;
+	primitive->vertexCount = c->vertex_cnt;
+	primitive->vertex = (GLVertex *)Internal::allocateFrame(c->vertex_cnt * sizeof(GLVertex));
+	memcpy(primitive->vertex, c->vertex, sizeof(GLVertex) * c->vertex_cnt);
+	addRegion(primitive->vertex, primitive->vertexCount);
+	primitive->next = nullptr;
+	*_moreEnd = primitive;
+	_moreEnd = &primitive->next;
 }
 
 void RasterizationDrawCall::computeDirtyRegion() {
+	addRegion(_vertex, _vertexCount);
+	for (const Primitive *primitive = _more; primitive; primitive = primitive->next)
+		addRegion(primitive->vertex, primitive->vertexCount);
+}
+
+// The region of the vertices of one draw added to _dirtyRegion
+void RasterizationDrawCall::addRegion(GLVertex *vertex, int vertexCount) {
 	int clip_code = 0xf;
 
-	for (int i = 0; i < _vertexCount; i++) {
-		clip_code &= _vertex[i].clip_code;
+	for (int i = 0; i < vertexCount; i++) {
+		clip_code &= vertex[i].clip_code;
 	}
 
 	if (!clip_code) {
@@ -407,8 +456,8 @@ void RasterizationDrawCall::computeDirtyRegion() {
 		int xmax = c->fb->getPixelBufferWidth() - 1;
 		int ymax = c->fb->getPixelBufferHeight() - 1;
 		int left = xmax, right = 0, top = ymax, bottom = 0;
-		for (int i = 0; i < _vertexCount; i++) {
-			GLVertex *v = &_vertex[i];
+		for (int i = 0; i < vertexCount; i++) {
+			GLVertex *v = &vertex[i];
 			if (v->clip_code)
 				c->gl_transform_to_viewport(v);
 			left =   MIN(left,   v->clip_code & 0x1 ?    0 : v->zp.x);
@@ -419,12 +468,16 @@ void RasterizationDrawCall::computeDirtyRegion() {
 		// Note: clipping outside of Rect is required despite above clip_code checks,
 		// as vertices far on the Z axis will overflow X and/or Y coordinates.
 		// This happens in EMI intro, for example.
-		_dirtyRegion = Common::Rect(
+		const Common::Rect region(
 			MAX(0, left),
 			MAX(0, top),
 			MIN(right, xmax) + 1,
 			MIN(bottom, ymax) + 1
 		);
+		if (_dirtyRegion.isEmpty())
+			_dirtyRegion = region;
+		else
+			_dirtyRegion.extend(region);
 	}
 }
 
@@ -433,12 +486,11 @@ Common::Rect RasterizationDrawCall::drawnRegion() {
 	if (!_state.colorMaskRed && !_state.colorMaskGreen && !_state.colorMaskBlue && !_state.colorMaskAlpha &&
 	    !_state.depthWriteMask)
 		return Common::Rect();
-	_dirtyRegion = Common::Rect();
-	computeDirtyRegion();
 	// a pixel more on each side, for the rasterizer's rounding
-	if (!_dirtyRegion.isEmpty())
-		_dirtyRegion.grow(1);
-	return _dirtyRegion;
+	Common::Rect region(_dirtyRegion);
+	if (!region.isEmpty())
+		region.grow(1);
+	return region;
 }
 
 void RasterizationDrawCall::execute(bool restoreState, const Common::Rect *clippingRectangle) const {
@@ -458,6 +510,24 @@ void RasterizationDrawCall::execute(bool restoreState, const Common::Rect *clipp
 	c->draw_triangle_front = (gl_draw_triangle_func)_drawTriangleFront;
 	c->draw_triangle_back = (gl_draw_triangle_func)_drawTriangleBack;
 
+	drawPrimitive(c);
+	for (const Primitive *primitive = _more; primitive; primitive = primitive->next) {
+		c->begin_type = primitive->beginType;
+		c->vertex = primitive->vertex;
+		c->vertex_cnt = primitive->vertexCount;
+		drawPrimitive(c);
+	}
+	c->begin_type = _state.beginType;
+
+	c->vertex = prevVertex;
+	c->vertex_cnt = prevVertexCount;
+
+	if (restoreState) {
+		applyState(backupState, nullptr);
+	}
+}
+
+void RasterizationDrawCall::drawPrimitive(GLContext *c) {
 	int cnt = c->vertex_cnt;
 
 	switch (c->begin_type) {
@@ -528,16 +598,9 @@ void RasterizationDrawCall::execute(bool restoreState, const Common::Rect *clipp
 	default:
 		error("glBegin: type %x not handled", c->begin_type);
 	}
-
-	c->vertex = prevVertex;
-	c->vertex_cnt = prevVertexCount;
-
-	if (restoreState) {
-		applyState(backupState, nullptr);
-	}
 }
 
-RasterizationDrawCall::RasterizationState RasterizationDrawCall::captureState() const {
+RasterizationDrawCall::RasterizationState RasterizationDrawCall::captureState() {
 	RasterizationState state;
 	GLContext *c = gl_get_context();
 	state.enableScissor = c->scissor_test_enabled;
@@ -595,7 +658,7 @@ RasterizationDrawCall::RasterizationState RasterizationDrawCall::captureState() 
 	return state;
 }
 
-void RasterizationDrawCall::applyState(const RasterizationDrawCall::RasterizationState &state, const Common::Rect *clippingRectangle) const {
+void RasterizationDrawCall::applyState(const RasterizationDrawCall::RasterizationState &state, const Common::Rect *clippingRectangle) {
 	GLContext *c = gl_get_context();
 	c->fb->setupScissor(state.enableScissor, state.scissor, clippingRectangle);
 	c->fb->enableBlending(state.enableBlending);
@@ -779,7 +842,7 @@ bool BlittingDrawCall::overwritesBuffer(bool &zBuffer) const {
 		  (_blitState.dfactor == TGL_ZERO || _blitState.dfactor == TGL_ONE_MINUS_SRC_ALPHA)));
 }
 
-BlittingDrawCall::BlittingState BlittingDrawCall::captureState() const {
+BlittingDrawCall::BlittingState BlittingDrawCall::captureState() {
 	BlittingState state;
 	TinyGL::GLContext *c = gl_get_context();
 	state.enableScissor = c->scissor_test_enabled;
@@ -795,7 +858,7 @@ BlittingDrawCall::BlittingState BlittingDrawCall::captureState() const {
 	return state;
 }
 
-void BlittingDrawCall::applyState(const BlittingState &state, const Common::Rect *clippingRectangle) const {
+void BlittingDrawCall::applyState(const BlittingState &state, const Common::Rect *clippingRectangle) {
 	TinyGL::GLContext *c = gl_get_context();
 	c->fb->setupScissor(state.enableScissor, state.scissor, clippingRectangle);
 	c->fb->enableBlending(state.enableBlending);
@@ -905,7 +968,7 @@ void ClearBufferDrawCall::execute(bool restoreState, const Common::Rect *clippin
 	}
 }
 
-ClearBufferDrawCall::ClearBufferState ClearBufferDrawCall::captureState() const {
+ClearBufferDrawCall::ClearBufferState ClearBufferDrawCall::captureState() {
 	ClearBufferState state;
 	TinyGL::GLContext *c = gl_get_context();
 	state.enableScissor = c->scissor_test_enabled;
@@ -913,7 +976,7 @@ ClearBufferDrawCall::ClearBufferState ClearBufferDrawCall::captureState() const 
 	return state;
 }
 
-void ClearBufferDrawCall::applyState(const ClearBufferState &state, const Common::Rect *clippingRectangle) const {
+void ClearBufferDrawCall::applyState(const ClearBufferState &state, const Common::Rect *clippingRectangle) {
 	TinyGL::GLContext *c = gl_get_context();
 	c->fb->setupScissor(state.enableScissor, state.scissor, clippingRectangle);
 

@@ -1380,6 +1380,33 @@ void SurfaceSdlGraphicsManager::internUpdateScreen() {
 		memcpy(_prevDirtyRectList, _dirtyRectList, _numDirtyRects * sizeof(_dirtyRectList[0]));
 		_numPrevDirtyRects = _numDirtyRects;
 	}
+#ifdef MISTER_HYBRID
+	// Rectangles that overlap are copied once, as the one around both when
+	// that is no bigger than the two: this frame's and the last one's are
+	// mostly the same place (Grim Fandango's TinyGL gives what it drew in
+	// both frames, and the last frame's list is added for the other page),
+	// which was copied up to four times
+	if (!doRedraw) {
+		for (int i = 0; i < actualDirtyRects; i++) {
+			SDL_Rect &a = _dirtyRectList[i];
+			for (int j = i + 1; j < actualDirtyRects; j++) {
+				const SDL_Rect &b = _dirtyRectList[j];
+				if (b.x >= a.x + a.w || a.x >= b.x + b.w || b.y >= a.y + a.h || a.y >= b.y + b.h)
+					continue;
+				const int x = MIN(a.x, b.x), y = MIN(a.y, b.y);
+				const int w = MAX(a.x + a.w, b.x + b.w) - x, h = MAX(a.y + a.h, b.y + b.h) - y;
+				if (w * h > a.w * a.h + b.w * b.h)
+					continue;
+				a.x = x;
+				a.y = y;
+				a.w = w;
+				a.h = h;
+				_dirtyRectList[j] = _dirtyRectList[--actualDirtyRects];
+				j = i;	// a grew: every other one again
+			}
+		}
+	}
+#endif
 
 	// Only draw anything if necessary
 #if SDL_VERSION_ATLEAST(2, 0, 0)
@@ -1742,6 +1769,14 @@ void SurfaceSdlGraphicsManager::copyRectToScreen(const void *buf, int pitch, int
 		error("SDL_LockSurface failed: %s", SDL_GetError());
 
 	byte *dst = (byte *)_screen->pixels + y * _screen->pitch + x * _screenFormat.bytesPerPixel;
+#ifdef MISTER_HYBRID
+	// drawn into the screen itself (Grim Fandango's TinyGL, which draws into
+	// it): only the rectangle to show
+	if (buf == dst && pitch == _screen->pitch) {
+		SDL_UnlockSurface(_screen);
+		return;
+	}
+#endif
 	if (_videoMode.screenWidth == w && pitch == _screen->pitch) {
 		memcpy(dst, buf, h*pitch);
 	} else {

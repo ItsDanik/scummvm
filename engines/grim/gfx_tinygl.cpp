@@ -48,6 +48,9 @@ GfxBase *CreateGfxTinyGL() {
 }
 
 GfxTinyGL::GfxTinyGL() :
+#ifdef MISTER_HYBRID
+		_screenChangeID(-1),
+#endif
 		_alpha(1.f),
 		_currentActor(nullptr), _smushImage(nullptr),
 		_storedDisplay(nullptr) {
@@ -87,6 +90,9 @@ void GfxTinyGL::setupScreen(int screenW, int screenH) {
 	_pixelFormat = g_system->getScreenFormat();
 	debug(2, "INFO: TinyGL front buffer pixel format: %s", _pixelFormat.toString().c_str());
 	TinyGL::createContext(screenW, screenH, _pixelFormat, 256, true, ConfMan.getBool("dirtyrects"));
+#ifdef MISTER_HYBRID
+	useScreen();
+#endif
 
 	_storedDisplay = new Graphics::Surface;
 	_storedDisplay->create(_gameWidth, _gameHeight, _pixelFormat);
@@ -105,6 +111,24 @@ void GfxTinyGL::setupScreen(int screenW, int screenH) {
 		tglPolygonOffset(-6.0, -6.0);
 	}
 }
+
+#ifdef MISTER_HYBRID
+// TinyGL draws into the backend's screen: no copy of each frame into it
+// (milliseconds of a 640x480 frame on the MiSTer). A screen made anew
+// (getScreenChangeID()) is taken before anything is drawn into or read from
+// the old one: at every frame and every read of the pixels.
+void GfxTinyGL::useScreen() {
+	if (g_system->getScreenChangeID() == _screenChangeID)
+		return;
+	Graphics::Surface *screen = g_system->lockScreen();
+	const bool fits = screen && screen->w == _screenWidth && screen->h == _screenHeight &&
+		screen->format == _pixelFormat && screen->pitch == ((_screenWidth * _pixelFormat.bytesPerPixel + 3) & ~3);
+	TinyGL::setColorBuffer(fits ? (byte *)screen->getPixels() : nullptr);
+	debug(2, "INFO: TinyGL draws into the screen: %s", fits ? "yes" : "no");
+	g_system->unlockScreen();
+	_screenChangeID = g_system->getScreenChangeID();
+}
+#endif
 
 const char *GfxTinyGL::getVideoDeviceName() {
 	return "Software Renderer";
@@ -182,6 +206,9 @@ void GfxTinyGL::flipBuffer(bool opportunistic) {
 		return;
 	}
 
+#ifdef MISTER_HYBRID
+	useScreen();
+#endif
 	Common::List<Common::Rect> dirtyAreas;
 	TinyGL::presentBuffer(dirtyAreas);
 
@@ -1228,6 +1255,9 @@ Bitmap *GfxTinyGL::getScreenshot(int w, int h, bool useStored) {
 	if (useStored) {
 		bmp = createScreenshotBitmap(_storedDisplay, w, h, true);
 	} else {
+#ifdef MISTER_HYBRID
+		useScreen();
+#endif
 		Graphics::Surface *src = TinyGL::copyFromFrameBuffer(_pixelFormat);
 		bmp = createScreenshotBitmap(src, w, h, true);
 		src->free();
@@ -1242,6 +1272,9 @@ void GfxTinyGL::createSpecialtyTextureFromScreen(uint id, uint8 *data, int x, in
 }
 
 void GfxTinyGL::storeDisplay() {
+#ifdef MISTER_HYBRID
+	useScreen();
+#endif
 	TinyGL::presentBuffer();
 	_storedDisplay->free();
 	delete _storedDisplay;
@@ -1488,6 +1521,9 @@ void GfxTinyGL::readPixels(int x, int y, int width, int height, uint8 *buffer) {
 	assert(x < _screenWidth);
 	assert(y < _screenHeight);
 
+#ifdef MISTER_HYBRID
+	useScreen();
+#endif
 	Graphics::Surface glBuffer;
 	TinyGL::getSurfaceRef(glBuffer);
 	uint8 r, g, b;

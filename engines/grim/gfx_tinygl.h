@@ -140,6 +140,10 @@ private:
 	TGLenum _depthFunc;
 
 	void readPixels(int x, int y, int width, int height, uint8 *buffer);
+#ifdef MISTER_HYBRID
+	int _screenChangeID;
+	void useScreen();
+#endif
 };
 
 } // end of namespace Grim

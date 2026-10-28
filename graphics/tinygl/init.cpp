@@ -93,9 +93,12 @@ namespace TinyGL {
 
 GLContext *gl_ctx;
 
-GLContext *gl_get_context() {
-	assert(gl_ctx);
-	return gl_ctx;
+void setColorBuffer(byte *pixels) {
+	GLContext *c = gl_get_context();
+	c->fb->setPixelBuffer(pixels);
+	// presentBufferSimple(): nothing of the last frame is there
+	c->_lastBase.clear();
+	c->_presentedUnseen = true;
 }
 
 ContextHandle *createContext(int screenW, int screenH, Graphics::PixelFormat pixelFormat, int textureSize,
