@@ -58,6 +58,7 @@
 
 #include "graphics/cursorman.h"
 #ifdef MISTER_HYBRID
+#include "gui/mister-options.h"
 #include "common/language.h"
 #include "common/platform.h"
 #include "image/jpeg.h"
@@ -524,6 +525,18 @@ void LauncherDialog::editGame(int item) {
 	// music support etc.
 	assert(item >= 0);
 
+#ifdef MISTER_HYBRID
+	if (!MisterOptionsDialog::fullOptions()) {
+		MisterOptionsDialog misterDialog(MisterOptionsDialog::kModeGame, _domains[item]);
+		if (misterDialog.runModal() > 0) {
+			updateListing();
+			selectTarget(misterDialog.getDomain());
+			g_gui.scheduleTopDialogRedraw();
+		}
+		return;
+	}
+#endif
+
 	EditGameDialog editDialog(_domains[item]);
 	if (editDialog.runModal() > 0) {
 		// User pressed OK, so make changes permanent
@@ -784,6 +797,19 @@ bool LauncherDialog::doGameDetection(const Common::Path &path) {
 		Common::String domain = EngineMan.createTargetForGame(result);
 
 		// Display edit dialog for the new entry
+#ifdef MISTER_HYBRID
+		if (!MisterOptionsDialog::fullOptions()) {
+			MisterOptionsDialog misterDialog(MisterOptionsDialog::kModeGame, domain);
+			if (misterDialog.runModal() > 0) {
+				updateListing();
+				selectTarget(misterDialog.getDomain());
+				g_gui.scheduleTopDialogRedraw();
+			} else {
+				ConfMan.removeGameDomain(domain);
+			}
+			return true;
+		}
+#endif
 		EditGameDialog editDialog(domain);
 		if (editDialog.runModal() > 0) {
 			// User pressed OK, so make changes permanent
@@ -846,6 +872,13 @@ void LauncherDialog::handleCommand(CommandSender *sender, uint32 cmd, uint32 dat
 		break;
 #endif
 	case kOptionsCmd: {
+#ifdef MISTER_HYBRID
+		if (!MisterOptionsDialog::fullOptions()) {
+			MisterOptionsDialog options(MisterOptionsDialog::kModeGlobal, Common::String(), nullptr, this);
+			options.runModal();
+			break;
+		}
+#endif
 		GlobalOptionsDialog options(this);
 		options.runModal();
 		}

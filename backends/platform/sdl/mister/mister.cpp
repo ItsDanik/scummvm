@@ -32,6 +32,7 @@
 #include "backends/mixer/null/null-mixer.h"
 #include "common/config-manager.h"
 #include "common/debug.h"
+#include "common/translation.h"
 #include "engines/engine.h"
 
 #include <mister_hybrid.h>
@@ -177,6 +178,9 @@ void OSystem_SDL_MiSTer::applyOSD(bool force) {
 	const int speech = MiSTer_SpeechVolume();
 	const int subtitles = MiSTer_Subtitles();
 	const int launcher = MiSTer_LauncherHires();
+	const int deadzone = MiSTer_StickDeadzone();
+	const int textSpeed = MiSTer_TextSpeed();
+	const int musicMidi = MiSTer_MusicMidi();
 	bool sync = false;
 
 	// the launcher's size (MisterGraphicsManager::initSize()) changes at
@@ -195,6 +199,17 @@ void OSystem_SDL_MiSTer::applyOSD(bool force) {
 		ConfMan.setInt("kbdmouse_speed", pointerSpeeds[pointer > 2 ? 0 : pointer], domain);
 		_lastPointer = pointer;
 	}
+	// the virtual mouse reads it at every move
+	if (force || deadzone != _lastDeadzone) {
+		ConfMan.setInt("joystick_deadzone", deadzone, domain);
+		_lastDeadzone = deadzone;
+	}
+	// The engine picked its music driver when the game started
+	// (applyMusicDevice()): say so when the OSD's Music line changes
+	if (!force && g_engine && _lastMusicMidi >= 0 && musicMidi != _lastMusicMidi)
+		displayMessageOnOSD(musicMidi ? _("Music: MIDI from the next start of the game")
+		                              : _("Music: FM chip from the next start of the game"));
+	_lastMusicMidi = musicMidi;
 	if (force || sound != _lastSound || music != _lastMusic || speech != _lastSpeech) {
 		ConfMan.setInt("sfx_volume", sound, domain);
 		ConfMan.setInt("music_volume", music, domain);
@@ -224,6 +239,14 @@ void OSystem_SDL_MiSTer::applyOSD(bool force) {
 			break;
 		}
 		_lastSubtitles = subtitles;
+		sync = true;
+	}
+	if (force || textSpeed != _lastTextSpeed) {
+		if (textSpeed < 0)
+			ConfMan.removeKey("talkspeed", domain);
+		else
+			ConfMan.setInt("talkspeed", textSpeed, domain);
+		_lastTextSpeed = textSpeed;
 		sync = true;
 	}
 	if (!sync)

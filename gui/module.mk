@@ -50,6 +50,11 @@ MODULE_OBJS := \
 	widgets/scrollcontainer.o \
 	widgets/tab.o
 
+ifdef MISTER_HYBRID
+MODULE_OBJS += \
+	mister-options.o
+endif
+
 ifdef USE_CLOUD
 MODULE_OBJS += \
 	cloudconnectionwizard.o \

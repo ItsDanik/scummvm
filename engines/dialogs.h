@@ -86,6 +86,9 @@ public:
 	// OptionsDialog API
 	void build() override;
 	void apply() override;
+#ifdef MISTER_HYBRID
+	int runModal() override;
+#endif
 
 private:
 	OptionsContainerWidget *_engineOptions;

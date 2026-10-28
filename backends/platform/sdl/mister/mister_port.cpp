@@ -58,6 +58,11 @@ int MiSTer_ExitCode() {
 // The first entry of each is 0, the default.
 //   "O[25:24],Pointer Speed,Normal,Slow,Fast;"
 int MiSTer_PointerSpeed() { return MH_OSD_GAME_BITS(MH_OSDStatus(), 24, 2); }
+//   "O[36:35],Stick Deadzone,Normal,Small,Large;"
+int MiSTer_StickDeadzone() {
+	static const int deadzones[] = { 3, 1, 6, 3 };
+	return deadzones[MH_OSD_GAME_BITS(MH_OSDStatus(), 35, 2)];
+}
 
 // The volumes' entries 100%, 90%, ... 0%: 0..10
 static int volume(int entry) {
@@ -70,6 +75,11 @@ int MiSTer_MusicVolume() { return volume(MH_OSD_MUSIC_VOLUME(MH_OSDStatus())); }
 int MiSTer_SpeechVolume() { return volume(MH_OSD_GAME_BITS(MH_OSDStatus(), 26, 4)); }
 //   "O[31:30],Subtitles,Game Default,Speech Only,Subtitles Only,Both;"
 int MiSTer_Subtitles() { return MH_OSD_GAME_BITS(MH_OSDStatus(), 30, 2); }
+//   "O[39:37],Text Speed,Normal,Slowest,Slow,Fast,Fastest;"
+int MiSTer_TextSpeed() {
+	static const int speeds[] = { -1, 0, 30, 128, 255, -1, -1, -1 };
+	return speeds[MH_OSD_GAME_BITS(MH_OSDStatus(), 37, 3)];
+}
 //   "O[34],Launcher,320x200,640x480;"
 bool MiSTer_LauncherHires() { return MH_OSD_GAME_BITS(MH_OSDStatus(), 34, 1); }
 //   "P2O[33:32],Fast Mode (SCUMM),Off,Fast,Turbo;"

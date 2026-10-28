@@ -57,12 +57,16 @@ int MiSTer_ExitCode();
 // OSD options of the game (CONF_STR in core/ScummVM.sv, status bits 24..63)
 enum { MISTER_POINTER_NORMAL, MISTER_POINTER_SLOW, MISTER_POINTER_FAST };
 int MiSTer_PointerSpeed();
+// ScummVM's joystick_deadzone: 3 (Normal), 1 (Small), 6 (Large)
+int MiSTer_StickDeadzone();
 // 0..256, as ScummVM's volumes
 int MiSTer_SoundVolume();
 int MiSTer_MusicVolume();
 int MiSTer_SpeechVolume();
 enum { MISTER_SUBTITLES_GAME, MISTER_SUBTITLES_SPEECH, MISTER_SUBTITLES_TEXT, MISTER_SUBTITLES_BOTH };
 int MiSTer_Subtitles();
+// ScummVM's talkspeed 0..255, or -1: the game's (Normal)
+int MiSTer_TextSpeed();
 // ScummVM's launcher in 640x480 (true) or 320x200
 bool MiSTer_LauncherHires();
 // Cheats: SCUMM's fast mode, 0 off, 1 fast (Ctrl+F), 2 turbo (Ctrl+G)

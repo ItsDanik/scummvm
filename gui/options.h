@@ -268,6 +268,11 @@ public:
 
 	void reflowLayout() override;
 
+#ifdef MISTER_HYBRID
+	// The MiSTer's options ask the same when autosave is switched on
+	static bool updateAutosavePeriod(int newValue);
+#endif
+
 protected:
 	void build() override;
 	void clean() override;
@@ -336,7 +341,9 @@ protected:
 	PopUpWidget *_updatesPopUp;
 #endif
 
+#ifndef MISTER_HYBRID
 	bool updateAutosavePeriod(int newValue);
+#endif
 	void addMiscControls(GuiObject *boss, const Common::String &prefix, bool lowres);
 
 #ifdef USE_CLOUD

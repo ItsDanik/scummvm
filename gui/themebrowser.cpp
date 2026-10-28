@@ -97,6 +97,16 @@ void ThemeBrowser::updateListing() {
 	_themes.clear();
 
 	ThemeEngine::listUsableThemes(_themes);
+#ifdef MISTER_HYBRID
+	// Only the themes the port brings (Danik, 2026-10-28): ours and ScummVM
+	// Modern, not the one built in (still the fall-back)
+	for (ThemeDescList::iterator i = _themes.begin(); i != _themes.end();) {
+		if (i->id == "builtin")
+			i = _themes.erase(i);
+		else
+			++i;
+	}
+#endif
 
 	const Common::String currentThemeId = g_gui.theme()->getThemeId();
 	int currentThemeIndex = 0, index = 0;

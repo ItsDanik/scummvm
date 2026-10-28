@@ -42,6 +42,9 @@
 #include "graphics/font.h"
 
 #include "engines/dialogs.h"
+#ifdef MISTER_HYBRID
+#include "gui/mister-options.h"
+#endif
 #include "engines/engine.h"
 #include "engines/metaengine.h"
 
@@ -71,6 +74,16 @@ MainMenuDialog::MainMenuDialog(Engine *engine)
 	new GUI::ButtonWidget(this, "GlobalMenu.Load", _("~L~oad"), Common::U32String(), kLoadCmd);
 	new GUI::ButtonWidget(this, "GlobalMenu.Save", _("~S~ave"), Common::U32String(), kSaveCmd);
 
+#ifdef MISTER_HYBRID
+	// The MiSTer's in-game options are the engine's own: no button for an
+	// engine without any (the layout closes up where it is missing)
+	bool hasOptions = GUI::MisterOptionsDialog::fullOptions();
+	if (!hasOptions && _engine->hasFeature(Engine::kSupportsChangingOptionsDuringRuntime)) {
+		GUI::MisterOptionsDialog options(GUI::MisterOptionsDialog::kModeInGame, ConfMan.getActiveDomainName(), _engine->getMetaEngine());
+		hasOptions = options.hasOptions();
+	}
+	if (hasOptions)
+#endif
 	new GUI::ButtonWidget(this, "GlobalMenu.Options", _("~O~ptions"), Common::U32String(), kOptionsCmd);
 
 	// The help button is disabled by default.
@@ -403,6 +416,19 @@ ConfigDialog::ConfigDialog() :
 
 ConfigDialog::~ConfigDialog() {
 }
+
+#ifdef MISTER_HYBRID
+int ConfigDialog::runModal() {
+	if (MisterOptionsDialog::fullOptions())
+		return OptionsDialog::runModal();
+
+	// The MiSTer's in-game options, also where an engine opens this dialog
+	// from its own menu
+	MetaEngine *metaEngine = g_engine->hasFeature(Engine::kSupportsChangingOptionsDuringRuntime) ? g_engine->getMetaEngine() : nullptr;
+	MisterOptionsDialog options(MisterOptionsDialog::kModeInGame, ConfMan.getActiveDomainName(), metaEngine);
+	return options.runModal();
+}
+#endif
 
 void ConfigDialog::build() {
 	OptionsDialog::build();

@@ -57,6 +57,9 @@ private:
 	int _lastSpeech = -1;
 	int _lastSubtitles = -1;
 	int _lastLauncher = -1;
+	int _lastDeadzone = -1;
+	int _lastTextSpeed = -2;
+	int _lastMusicMidi = -1;
 };
 
 #endif
