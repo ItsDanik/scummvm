@@ -72,6 +72,23 @@ public:
 		return AdvancedMetaEngineDetection::identifyGame(game, descriptor);
 	}
 
+#if defined(MISTER_HYBRID) && !defined(ENABLE_MONKEY4)
+	// MiSTer: Escape from Monkey Island is not built in (ScummVM_MiSTer's
+	// build.sh, Danik 2026-10-28), so it is not found either: the launcher
+	// never adds a game it cannot start
+	DetectedGames detectGames(const Common::FSList &fslist, uint32 skipADFlags, bool skipIncomplete) override {
+		DetectedGames games = AdvancedMetaEngineDetection::detectGames(fslist, skipADFlags, skipIncomplete);
+
+		for (uint i = 0; i < games.size();) {
+			if (games[i].gameId == "monkey4")
+				games.remove_at(i);
+			else
+				i++;
+		}
+		return games;
+	}
+#endif
+
 	const char *getEngineName() const override {
 		return "Grim";
 	}
