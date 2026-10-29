@@ -406,7 +406,18 @@ void ListWidget::handleMouseDown(int x, int y, int button, int clickCount) {
 		abortEditMode();
 }
 
+#ifdef MISTER_HYBRID
+bool ListWidget::onPrefix(int x, int textLeft) const {
+	return _skipPrefix && x < textLeft + g_gui.getStringWidth(Common::U32String("  "), ThemeEngine::kFontStyleNormal) + 2;
+}
+#endif
+
 void ListWidget::handleMouseUp(int x, int y, int button, int clickCount) {
+#ifdef MISTER_HYBRID
+	// a click on the mark marks the game or takes the mark away: never
+	// half of a double click, which starts it
+	bool mark = false;
+#endif
 	if (button == 1 || button == 2) {
 		if (_isMouseDown && button == 1 && _isDragging) {
 			_fluidScroller->startFling();
@@ -447,12 +458,19 @@ void ListWidget::handleMouseUp(int x, int y, int button, int clickCount) {
 					_selectedItem = newSelectedItem;
 					markSelectedItem(newSelectedItem, true);
 					sendCommand(kListSelectionChangedCmd, _selectedItem);
+#ifdef MISTER_HYBRID
+					mark = button == 1 && onPrefix(x, getEditRect().left + _leftPadding);
+#endif
 				}
 
 				// Notify clients if an item was clicked
 				if (newSelectedItem >= 0) {
 					sendCommand(kListItemSingleClickedCmd, _selectedItem);
 				}
+#ifdef MISTER_HYBRID
+				if (mark)
+					sendCommand(kListPrefixClickedCmd, _selectedItem);
+#endif
 
 	// TODO: Determine where inside the string the user clicked and place the
 	// caret accordingly.
@@ -467,7 +485,11 @@ void ListWidget::handleMouseUp(int x, int y, int button, int clickCount) {
 
 	// If this was a double click and the mouse is still over
 	// the selected item, send the double click command
+#ifdef MISTER_HYBRID
+	if (!_wasAnimating && clickCount == 2 && !mark && (_selectedItem == findItem(x, y)) &&
+#else
 	if (!_wasAnimating && clickCount == 2 && (_selectedItem == findItem(x, y)) &&
+#endif
 		_selectedItem >= 0) {
 		sendCommand(kListItemDoubleClickedCmd, _selectedItem);
 	}
@@ -604,7 +626,16 @@ bool ListWidget::handleKeyDown(Common::KeyState state) {
 			int bestMatch = 0;
 			bool stop;
 			for (const auto &entry : _list) {
+#ifdef MISTER_HYBRID
+				// without the launcher's column of dnkLauncher's favourites
+				// before the titles (favouritePrefix(), gui/mister-favourites.h)
+				Common::U32String text = stripGUIformatting(entry);
+				if (_skipPrefix && text.size() >= 2)
+					text = text.substr(2);
+				const int match = matchingCharsIgnoringCase(text.encode().c_str(), _quickSelectStr.c_str(), stop, _dictionarySelect);
+#else
 				const int match = matchingCharsIgnoringCase(stripGUIformatting(entry).encode().c_str(), _quickSelectStr.c_str(), stop, _dictionarySelect);
+#endif
 				if (match > bestMatch || stop) {
 					_selectedItem = newSelectedItem;
 					bestMatch = match;

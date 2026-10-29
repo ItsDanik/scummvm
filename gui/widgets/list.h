@@ -45,7 +45,10 @@ enum {
 	kListItemActivatedCmd		= 'LIac',	///< item activated by return/enter - 'data' will be item index
 	kListItemRemovalRequestCmd	= 'LIrm',	///< request to remove the item with the delete/backspace keys - 'data' will be item index
 	kListItemEditModeStartedCmd = 'LIes',	///< edit mode started - 'data' will be item index
-	kListSelectionChangedCmd	= 'Lsch'	///< selection changed - 'data' will be item index
+	kListSelectionChangedCmd	= 'Lsch',	///< selection changed - 'data' will be item index
+#ifdef MISTER_HYBRID
+	kListPrefixClickedCmd		= 'Lpfx',	///< a click on the titles' mark (setQuickSelectSkipsPrefix()) - 'data' will be item index
+#endif
 };
 
 /* ListWidget */
@@ -101,6 +104,9 @@ protected:
 
 	Common::U32String	_filter;
 	bool			_quickSelect;
+#ifdef MISTER_HYBRID
+	bool			_skipPrefix = false;	// the titles' first two characters are a mark, not the title
+#endif
 	bool			_dictionarySelect;
 
 	uint32			_cmd;
@@ -150,6 +156,11 @@ public:
 	bool isItemVisible(int item) const { return _currentPos <= item && item < _currentPos + _entriesPerPage; }
 
 	void enableQuickSelect(bool enable) 		{ _quickSelect = enable; }
+#ifdef MISTER_HYBRID
+	void setQuickSelectSkipsPrefix(bool skip)	{ _skipPrefix = skip; }
+	// x (in the widget) on the titles' mark, the text starting at textLeft
+	bool onPrefix(int x, int textLeft) const;
+#endif
 	Common::String getQuickSelectString() const { return _quickSelectStr; }
 
 	void enableDictionarySelect(bool enable)	{ _dictionarySelect = enable; }

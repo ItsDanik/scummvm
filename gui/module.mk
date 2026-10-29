@@ -52,6 +52,7 @@ MODULE_OBJS := \
 
 ifdef MISTER_HYBRID
 MODULE_OBJS += \
+	mister-favourites.o \
 	mister-options.o
 endif
 

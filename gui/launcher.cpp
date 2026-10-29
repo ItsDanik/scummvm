@@ -58,6 +58,7 @@
 
 #include "graphics/cursorman.h"
 #ifdef MISTER_HYBRID
+#include "gui/mister-favourites.h"
 #include "gui/mister-options.h"
 #include "common/language.h"
 #include "common/platform.h"
@@ -94,6 +95,7 @@ enum {
 	kGridSwitchCmd = 'GRID',
 #ifdef MISTER_HYBRID
 	kArtSwitchCmd = 'ARTV',
+	kFavouriteCmd = 'FAVR',
 #endif
 
 	kCmdGlobalGraphicsOverride = 'OGFX',
@@ -692,6 +694,10 @@ void LauncherDialog::handleKeyUp(Common::KeyState state) {
 
 void LauncherDialog::handleOtherEvent(const Common::Event &evt) {
 	Dialog::handleOtherEvent(evt);
+#ifdef MISTER_HYBRID
+	if (evt.type == Common::EVENT_CUSTOM_ENGINE_ACTION_START && evt.customType == kActionFavourite)
+		toggleSelectedFavourite();
+#endif
 	if (evt.type == Common::EVENT_DROP_FILE) {
 		// If the path is a file, take the parent directory for the detection
 		Common::Path path = evt.path;
@@ -923,10 +929,30 @@ void LauncherDialog::handleCommand(CommandSender *sender, uint32 cmd, uint32 dat
 		break;
 #endif
 #endif
+#ifdef MISTER_HYBRID
+	case kListPrefixClickedCmd:
+		toggleSelectedFavourite();
+		break;
+	case kFavouriteCmd:
+		// the artwork view's box: also sent when it shows the game's state
+		if (item >= 0 && item < (int)_domains.size() && (data != 0) != isFavourite(_domains[item]))
+			toggleSelectedFavourite();
+		break;
+#endif
 	default:
 		Dialog::handleCommand(sender, cmd, data);
 	}
 }
+
+#ifdef MISTER_HYBRID
+void LauncherDialog::toggleSelectedFavourite() {
+	const int item = getSelected();
+	if (item >= 0 && item < (int)_domains.size()) {
+		toggleFavourite(_domains[item], _metadataParser);
+		updateListing();
+	}
+}
+#endif
 
 #if defined(MISTER_HYBRID) && !defined(DISABLE_LAUNCHERDISPLAY_GRID)
 LauncherDisplayType getRequestedLauncherType();
@@ -1177,6 +1203,7 @@ private:
 
 	ArtWidget        *_art;
 	StaticTextWidget *_artTitle;
+	CheckboxWidget   *_artFavourite; // marks the game for dnkLauncher, while it is installed
 	StaticTextWidget *_details[kDetailLines];
 	Common::String    _artTarget; // the game whose artwork and details are shown
 };
@@ -1319,6 +1346,10 @@ void LauncherSimple::build() {
 }
 
 void LauncherSimple::updateListing(int selPos) {
+#ifdef MISTER_HYBRID
+	// dnkLauncher's favourites as the settings say (a game removed, edited)
+	syncFavourites(_metadataParser);
+#endif
 	Common::U32StringArray l;
 	const int numEntries = ConfMan.getInt("gui_list_max_scan_entries");
 
@@ -1380,7 +1411,11 @@ void LauncherSimple::updateListing(int selPos) {
 		if (isAddOn)
 			color = ThemeEngine::kFontColorAlternate;
 
+#ifdef MISTER_HYBRID
+		Common::U32String gameDesc = GUI::ListWidget::getThemeColor(color) + favouritePrefix(curDomain.key) + Common::U32String(curDomain.description);
+#else
 		Common::U32String gameDesc = GUI::ListWidget::getThemeColor(color) + Common::U32String(curDomain.description);
+#endif
 
 		if (isAddOn)
 			gameDesc += Common::U32String(" - ") + _("Add-on");
@@ -1407,6 +1442,9 @@ void LauncherSimple::updateListing(int selPos) {
 	}
 	_listInitialized = true;
 
+#ifdef MISTER_HYBRID
+	_list->setQuickSelectSkipsPrefix(favouritesAvailable());
+#endif
 	_list->setList(l);
 
 	groupEntries(domainList);
@@ -1871,6 +1909,9 @@ void LauncherGrid::handleCommand(CommandSender *sender, uint32 cmd, uint32 data)
 }
 
 void LauncherGrid::updateListing(int selPos) {
+#ifdef MISTER_HYBRID
+	syncFavourites(_metadataParser);
+#endif
 	// Retrieve a list of all games defined in the config file
 	_domains.clear();
 	_domainTitles.clear();
@@ -2057,7 +2098,7 @@ static Common::SharedPtr<Graphics::ManagedSurface> loadArt(const Common::String 
 }
 
 LauncherArt::LauncherArt(const Common::String &title)
-	: LauncherSimple(title), _art(nullptr), _artTitle(nullptr), _details() {
+	: LauncherSimple(title), _art(nullptr), _artTitle(nullptr), _artFavourite(nullptr), _details() {
 	addArtWidgets();
 }
 
@@ -2071,6 +2112,14 @@ void LauncherArt::build() {
 void LauncherArt::addArtWidgets() {
 	_art = new ArtWidget(this, _title + ".Art");
 	_artTitle = new StaticTextWidget(this, _title + ".ArtTitle", Common::U32String(), Common::U32String(), ThemeEngine::kFontStyleBold);
+	if (favouritesAvailable()) {
+		// the theme's star (0x80 of its font, make_theme.py)
+		Common::U32String star;
+		star += (Common::u32char_type_t)0x80;
+		_artFavourite = new CheckboxWidget(this, _title + ".ArtFavourite", star, _("Mark the game for dnkLauncher"), kFavouriteCmd);
+	} else {
+		_artFavourite = nullptr;
+	}
 	for (int i = 0; i < kDetailLines; i++) {
 		_details[i] = new StaticTextWidget(this, Common::String::format("%s.ArtDetail%d", _title.c_str(), i + 1), Common::U32String());
 		_details[i]->setFontColor(ThemeEngine::kFontColorAlternate);
@@ -2103,6 +2152,8 @@ void LauncherArt::reflowLayout() {
 
 void LauncherArt::updateListing(int selPos) {
 	LauncherSimple::updateListing(selPos);
+	// the title may have gained or lost its star
+	_artTarget.clear();
 	updateArt();
 }
 
@@ -2178,6 +2229,10 @@ void LauncherArt::updateArt() {
 			lines.push_back(Common::U32String(line));
 	}
 	_artTitle->setLabel(title);
+	if (_artFavourite) {
+		_artFavourite->setState(domain && isFavourite(target));
+		_artFavourite->setVisible(domain != nullptr);
+	}
 	for (int i = 0; i < kDetailLines; i++)
 		_details[i]->setLabel(i < (int)lines.size() ? lines[i] : Common::U32String());
 }

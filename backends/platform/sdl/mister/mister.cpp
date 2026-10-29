@@ -103,6 +103,11 @@ void OSystem_SDL_MiSTer::initBackend() {
 	ConfMan.registerDefault("dirtyrects", false);
 	// the pad is the core's joystick 1, whatever the settings say
 	ConfMan.setInt("joystick_num", 0, Common::ConfigManager::kTransientDomain);
+	// started by dnkLauncher for one game (its target on the command line;
+	// the launch script says so): ScummVM leaves when the game does
+	// (base/main.cpp), not back to its launcher
+	if (getenv("DNK_FROM_LAUNCHER"))
+		ConfMan.setBool("dnk_one_game", true, session);
 
 	if (!_eventSource) {
 		MisterEventSource::addControllerMapping();

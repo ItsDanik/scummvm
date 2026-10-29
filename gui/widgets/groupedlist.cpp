@@ -280,6 +280,10 @@ void GroupedListWidget::handleMouseDown(int x, int y, int button, int clickCount
 }
 
 void GroupedListWidget::handleMouseUp(int x, int y, int button, int clickCount) {
+#ifdef MISTER_HYBRID
+	// a click on the mark marks the game or takes the mark away (ListWidget)
+	bool mark = false;
+#endif
 	if (button == 1 || button == 2) {
 		if (_isMouseDown && button == 1 && _isDragging) {
 			_fluidScroller->startFling();
@@ -334,11 +338,20 @@ void GroupedListWidget::handleMouseUp(int x, int y, int button, int clickCount) 
 							_selectedItem = newSelectedItem;
 							markSelectedItem(newSelectedItem, true);
 							sendCommand(kListSelectionChangedCmd, _selectedItem);
+#ifdef MISTER_HYBRID
+							// the text's left as drawWidget() puts it
+							const int indent = _groupsVisible ? g_gui.getFontHeight() + _leftPadding : _leftPadding;
+							mark = button == 1 && onPrefix(x, getEditRect().left + indent);
+#endif
 						}
 
 						// Notify clients if an item was clicked
 						if (newSelectedItem >= 0)
 							sendCommand(kListItemSingleClickedCmd, _selectedItem);
+#ifdef MISTER_HYBRID
+						if (mark)
+							sendCommand(kListPrefixClickedCmd, _selectedItem);
+#endif
 
 						applyScrollPos();
 					}
@@ -352,7 +365,11 @@ void GroupedListWidget::handleMouseUp(int x, int y, int button, int clickCount) 
 
 	// If this was a double click and the mouse is still over
 	// the selected item, send the double click command
+#ifdef MISTER_HYBRID
+	if (!_wasAnimating && clickCount == 2 && !mark && (_selectedItem == findItem(x, y))) {
+#else
 	if (!_wasAnimating && clickCount == 2 && (_selectedItem == findItem(x, y))) {
+#endif
 		int selectID = getSelected();
 		if (selectID >= 0) {
 			sendCommand(kListItemDoubleClickedCmd, _selectedItem);

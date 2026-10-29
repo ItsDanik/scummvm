@@ -30,6 +30,9 @@
 #include "backends/keymapper/standard-actions.h"
 
 #include "gui/gui-manager.h"
+#ifdef MISTER_HYBRID
+#include "gui/mister-favourites.h"
+#endif
 #include "gui/dialog.h"
 #include "gui/ThemeEngine.h"
 #include "gui/ThemeEval.h"
@@ -174,9 +177,25 @@ Common::Keymap *GuiManager::getKeymap() const {
 
 	act = new Action("CLOS", _("Close"));
 	act->addDefaultInputMapping("ESCAPE");
+#ifdef MISTER_HYBRID
+	// Y marks a game for dnkLauncher while it is installed (Menu Back
+	// closes a dialog all the same)
+	if (!favouritesAvailable())
+		act->addDefaultInputMapping("JOY_Y");
+#else
 	act->addDefaultInputMapping("JOY_Y");
+#endif
 	act->setKeyEvent(KeyState(KEYCODE_ESCAPE, ASCII_ESCAPE, 0));
 	guiMap->addAction(act);
+
+#ifdef MISTER_HYBRID
+	if (favouritesAvailable()) {
+		act = new Action("FAVR", _("Favourite"));
+		act->addDefaultInputMapping("JOY_Y");
+		act->setCustomEngineActionEvent(kActionFavourite);
+		guiMap->addAction(act);
+	}
+#endif
 
 	act = new Action(kStandardActionMoveUp, _("Up"));
 	act->setKeyEvent(KEYCODE_UP);

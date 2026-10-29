@@ -204,6 +204,15 @@ protected:
 	 */
 	void removeGamesWithAddons(const Common::StringArray &domainsToRemove);
 
+#ifdef MISTER_HYBRID
+	/**
+	 * The selected game marked for dnkLauncher, or the mark taken away
+	 * (gui/mister-favourites.h): Y, a click on the list's star, the artwork
+	 * view's button.
+	 */
+	void toggleSelectedFavourite();
+#endif
+
 	/**
 	 * Shared helper for removing games after confirmation.
 	 * Called by subclasses after building their own confirmation message.

@@ -55,6 +55,9 @@ enum {
 	kActionCopy,
 	kActionCut,
 	kActionPaste,
+#ifdef MISTER_HYBRID
+	kActionFavourite,	// the launcher: mark the game for dnkLauncher (gui/mister-favourites.h)
+#endif
 };
 
 enum {

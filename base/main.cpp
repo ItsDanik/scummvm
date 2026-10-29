@@ -896,6 +896,15 @@ extern "C" int scummvm_main(int argc, const char * const argv[]) {
 
 			ChainedGamesMan.pop(chainedGame, saveSlot);
 
+#ifdef MISTER_HYBRID
+			// A game dnkLauncher started (the backend's dnk_one_game): ScummVM
+			// leaves with it, back to dnkLauncher, whatever Return to Launcher
+			// says; a game it chains to (Maniac Mansion in Day of the Tentacle)
+			// is played first
+			if (chainedGame.empty() && ConfMan.hasKey("dnk_one_game", Common::ConfigManager::kSessionDomain))
+				break;
+#endif
+
 			// Discard any command line options. It's unlikely that the user
 			// wanted to apply them to *all* games ever launched.
 			ConfMan.getDomain(Common::ConfigManager::kTransientDomain)->clear();
