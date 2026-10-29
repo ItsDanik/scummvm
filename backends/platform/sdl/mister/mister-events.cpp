@@ -27,6 +27,7 @@
 
 #include "common/events.h"
 #include "common/system.h"
+#include "common/config-manager.h"
 #include "engines/engine.h"
 #include "gui/gui-manager.h"
 
@@ -70,6 +71,15 @@ bool MisterEventSource::pollEvent(Common::Event &event) {
 }
 
 bool MisterEventSource::dispatchSDLEvent(SDL_Event &ev, Common::Event &event) {
+	// SDL's quit: another core loaded, or this one loaded again (the
+	// library's MH_CheckAlive()), or SIGTERM from the launch script. ScummVM
+	// leaves at once, whatever Return to the launcher and Confirm exit say:
+	// a game would go back to the launcher, or wait for an answer, with no
+	// core there (the transient settings come before the player's)
+	if (ev.type == SDL_QUIT) {
+		ConfMan.setBool("gui_return_to_launcher_at_exit", false, Common::ConfigManager::kTransientDomain);
+		ConfMan.setBool("confirm_exit", false, Common::ConfigManager::kTransientDomain);
+	}
 	if ((ev.type == SDL_JOYBUTTONDOWN || ev.type == SDL_JOYBUTTONUP) && _pad &&
 	    ev.jbutton.which == SDL_JoystickInstanceID(_pad)) {
 		const int button = ev.jbutton.button;
