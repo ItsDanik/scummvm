@@ -101,8 +101,6 @@ void OSystem_SDL_MiSTer::initBackend() {
 	// rectangles cost more than they save once anything moves (Manny
 	// walking: 92 to 143ms a frame against 75 on the ARM)
 	ConfMan.registerDefault("dirtyrects", false);
-	// the pad is the core's joystick 1, whatever the settings say
-	ConfMan.setInt("joystick_num", 0, Common::ConfigManager::kTransientDomain);
 	// started by dnkLauncher for one game (its target on the command line;
 	// the launch script says so): ScummVM leaves when the game does
 	// (base/main.cpp), not back to its launcher
@@ -147,6 +145,9 @@ bool OSystem_SDL_MiSTer::hasFeature(Feature f) {
 
 void OSystem_SDL_MiSTer::engineInit() {
 	OSystem_POSIX::engineInit();
+	// a chained game starts without the launcher, after the transient
+	// domain was cleared (base/main.cpp)
+	applyOSD(false);
 	applyMusicDevice();
 	MiSTer_SetScummRunning(ConfMan.get("engineid") == "scumm");
 }
@@ -187,6 +188,16 @@ void OSystem_SDL_MiSTer::applyOSD(bool force) {
 	const int textSpeed = MiSTer_TextSpeed();
 	const int musicMidi = MiSTer_MusicMidi();
 	bool sync = false;
+
+	// ScummVM clears the transient domain when its launcher opens and when a
+	// game ends (base/main.cpp): everything is set again then, else a game
+	// started from the launcher had its own subtitles, text speed and
+	// volumes until an OSD line was changed
+	if (!ConfMan.hasKey("kbdmouse_speed", domain)) {
+		force = true;
+		// the pad is the core's joystick 1, whatever the settings say
+		ConfMan.setInt("joystick_num", 0, domain);
+	}
 
 	// the launcher's size (MisterGraphicsManager::initSize()) changes at
 	// once while it is on the screen; ScummVM's GUI sees the new size and
