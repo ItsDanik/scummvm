@@ -40,6 +40,7 @@ public:
 	bool getFeatureState(OSystem::Feature f) const override;
 
 	void initSize(uint w, uint h, const Graphics::PixelFormat *format = NULL) override;
+	void updateScreen() override;
 
 	uint getDefaultScaleFactor() const override;
 	bool setScaler(uint mode, int factor) override;

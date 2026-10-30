@@ -55,6 +55,12 @@ public:
 	/** Add the virtual mouse keymapper actions to a keymap */
 	void addActionsToKeymap(Keymap *keymap);
 
+#ifdef MISTER_HYBRID
+	/** The backend, around each frame it shows: the pointer moves with every frame */
+	static void updateBeforeFrame();
+	static void updateAfterFrame();
+#endif
+
 private:
 	static const int32 kUpdateDelay = 12;
 	static const int32 kDefaultScreenWidth = 640;
@@ -78,24 +84,35 @@ private:
 	float computeJoystickMouseSpeedFactor() const;
 
 #ifdef MISTER_HYBRID
-	// The d-pad, apart from the stick: a tap moves the pointer one pixel, held
+	// The d-pad, apart from the stick: a tap moves the pointer two pixels, held
 	// it starts slow and gets faster, up to the stick's full speed
+	static const int kDpadTap = 2;            // pixels
 	static const uint32 kDpadRampDelay = 150; // ms before it moves on by itself
 	static const uint32 kDpadRampTime = 850;  // ms from then to its full speed
-	static const uint32 kMaxStep = 100;       // ms a slow frame or a load counts for
+	static const uint32 kMaxStep = 6;         // fields a slow frame or a load counts for
 
 	struct DpadAxis {
 		bool negative;
 		bool positive;
 		uint32 start;
-		int firstPixel;
+		int firstPixels;
 	};
 
+	void movePointer(uint32 field);
 	void handleDpad(DpadAxis &axis, bool &direction, int sign, bool down);
 	float dpadVelocity(DpadAxis &axis, uint32 curTime) const;
 
 	DpadAxis _dpadX;
 	DpadAxis _dpadY;
+	uint32 _lastField;
+	uint32 _frameField;    // the field counter just after the last frame
+	uint32 _lastMoveField;
+	bool _warping;
+	bool _moved;           // and the game has not heard of it yet
+	Common::Point _movedTo;
+	Common::Point _movedBy;
+
+	static VirtualMouse *_instance;
 #endif
 
 	EventDispatcher *_eventDispatcher;

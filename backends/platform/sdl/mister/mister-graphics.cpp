@@ -23,6 +23,7 @@
 
 #include "backends/platform/sdl/mister/mister-graphics.h"
 #include "backends/platform/sdl/mister/mister_port.h"
+#include "backends/keymapper/virtual-mouse.h"
 #include "backends/platform/sdl/sdl-window.h"
 #include "engines/engine.h"
 
@@ -137,6 +138,12 @@ SDL_Surface *MisterGraphicsManager::SDL_SetVideoMode(int width, int height, int 
 	handleResize(_windowWidth, _windowHeight);
 
 	return SDL_GetWindowSurface(sdlWindow);
+}
+
+void MisterGraphicsManager::updateScreen() {
+	Common::VirtualMouse::updateBeforeFrame();
+	SurfaceSdlGraphicsManager::updateScreen();
+	Common::VirtualMouse::updateAfterFrame();
 }
 
 void MisterGraphicsManager::SDL_UpdateRects(SDL_Surface *screen, int numrects, SDL_Rect *rects) {

@@ -30,9 +30,10 @@ class OSystem_SDL_MiSTer;
 // as they are; the core's joystick 1 a game controller of ScummVM's (A, B, X,
 // Y, L, R, Select and Start the actions of the core's J1 list, the d-pad,
 // the sticks), so that the keymapper maps it; and Menu OK / Menu Back
-// (hybrid/CLAUDE.md, "menus work with Menu OK and Menu Back"), done here:
-// Enter and Esc in ScummVM's dialogs, a left click and Esc in a game, and
-// nothing where the same button already does one of the pad's actions.
+// (hybrid/CLAUDE.md, "menus work with Menu OK and Menu Back"), done here: in
+// ScummVM's dialogs Esc, and Enter or, on a button that is one of the pad's
+// actions as well, the click at the pointer, instead of that action; in a game
+// a left click and Esc, and nothing on such a button, which does its action.
 class MisterEventSource : public SdlEventSource {
 public:
 	MisterEventSource(OSystem_SDL_MiSTer *system);
@@ -51,15 +52,18 @@ private:
 	enum Sent { kSentNothing, kSentReturn, kSentEscape, kSentLeftClick };
 	enum { kOK, kBack };
 
-	bool menuButton(int which, bool down, Common::Event &event);
+	bool menuButton(int which, bool down, bool sameAsAction, Common::Event &event);
 	bool actionHeld() const;
+	uint32 menuActions(int which) const;
 	bool isStickDpad(const SDL_ControllerButtonEvent &button);
+	bool isMenuAction(const SDL_ControllerButtonEvent &button);
 
 	OSystem_SDL_MiSTer *_system;
 	SDL_Joystick *_pad;
 	int _held[2];   // the buttons that are Menu OK (Menu Back) held, as a mask
 	Sent _sent[2];  // what its press sent, for its release
 	uint32 _stickDpad; // the d-pad directions held that are the stick's (MH_JOY_*)
+	uint32 _menuAction; // the pad's actions held that are Menu OK / Back (MH_JOY_BUTTON)
 };
 
 #endif

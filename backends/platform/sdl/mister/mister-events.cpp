@@ -53,7 +53,7 @@ void MisterEventSource::addControllerMapping() {
 		warning("MiSTer: no game controller mapping for the core's joystick: %s", SDL_GetError());
 }
 
-MisterEventSource::MisterEventSource(OSystem_SDL_MiSTer *system) : _system(system), _pad(nullptr), _stickDpad(0) {
+MisterEventSource::MisterEventSource(OSystem_SDL_MiSTer *system) : _system(system), _pad(nullptr), _stickDpad(0), _menuAction(0) {
 	// a handle of our own, for its Menu OK / Back buttons and what else
 	// is held (ScummVM has it open as a game controller)
 	if (SDL_NumJoysticks() > 0)
@@ -105,10 +105,11 @@ bool MisterEventSource::dispatchSDLEvent(SDL_Event &ev, Common::Event &event) {
 			// last release count
 			if ((before != 0) == (_held[which] != 0))
 				return false;
-			return menuButton(which, _held[which] != 0, event);
+			return menuButton(which, _held[which] != 0, bit == 2 && menuActions(which) != 0, event);
 		}
 	}
-	if ((ev.type == SDL_CONTROLLERBUTTONDOWN || ev.type == SDL_CONTROLLERBUTTONUP) && _pad && isStickDpad(ev.cbutton))
+	if ((ev.type == SDL_CONTROLLERBUTTONDOWN || ev.type == SDL_CONTROLLERBUTTONUP) && _pad &&
+	    (isStickDpad(ev.cbutton) || isMenuAction(ev.cbutton)))
 		return false;
 	return SdlEventSource::dispatchSDLEvent(ev, event);
 }
@@ -154,6 +155,51 @@ bool MisterEventSource::isStickDpad(const SDL_ControllerButtonEvent &button) {
 	return true;
 }
 
+// The pad's actions on the physical button of the MiSTer menu's Menu OK / Back.
+// Without a mapping that is every PlayStation or Xbox pad's: the bottom button
+// is Menu OK and the core's B, the right one Menu Back and the core's A. Their
+// being held says nothing: the library reads Menu OK / Back from Linux, ahead
+// of the core's buttons, so the pad's action comes after them.
+uint32 MisterEventSource::menuActions(int which) const {
+	uint32 ok, back;
+
+	MH_MenuButtons(MH_OSDStatus(), &ok, &back);
+	uint32 actions = 0;
+	for (int i = 0; i < MISTER_JOY_ACTIONS; i++)
+		actions |= MH_JOY_BUTTON(i);
+	return (which == kOK ? ok : back) & actions;
+}
+
+// In ScummVM's dialogs a button that is Menu OK or Menu Back as well is only
+// that (menuButton()), as in every port's menus: its action goes no further
+bool MisterEventSource::isMenuAction(const SDL_ControllerButtonEvent &button) {
+	// the pad's actions in the order of the core's J1 list (addControllerMapping())
+	static const int actions[MISTER_JOY_ACTIONS] = {
+		SDL_CONTROLLER_BUTTON_A, SDL_CONTROLLER_BUTTON_B, SDL_CONTROLLER_BUTTON_X, SDL_CONTROLLER_BUTTON_Y,
+		SDL_CONTROLLER_BUTTON_LEFTSHOULDER, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER,
+		SDL_CONTROLLER_BUTTON_BACK, SDL_CONTROLLER_BUTTON_START
+	};
+	uint32 action = 0;
+
+	for (int i = 0; i < MISTER_JOY_ACTIONS; i++) {
+		if (actions[i] == button.button)
+			action = MH_JOY_BUTTON(i);
+	}
+	if (!action)
+		return false;
+
+	const bool wasMenu = (_menuAction & action) != 0;
+
+	_menuAction &= ~action;
+	// its release goes where its press went
+	if (button.state != SDL_PRESSED)
+		return wasMenu;
+	if (!g_gui.isActive() || !((menuActions(kOK) | menuActions(kBack)) & action))
+		return false;
+	_menuAction |= action;
+	return true;
+}
+
 // A button of the pad's eight actions is held: the Menu OK / Back pressed now
 // is the same button, which already does what it does
 bool MisterEventSource::actionHeld() const {
@@ -164,7 +210,7 @@ bool MisterEventSource::actionHeld() const {
 	return false;
 }
 
-bool MisterEventSource::menuButton(int which, bool down, Common::Event &event) {
+bool MisterEventSource::menuButton(int which, bool down, bool sameAsAction, Common::Event &event) {
 	if (!down) {
 		// what its press sent goes up again
 		const Sent sent = _sent[which];
@@ -190,14 +236,18 @@ bool MisterEventSource::menuButton(int which, bool down, Common::Event &event) {
 
 	Sent sent = kSentNothing;
 	if (g_gui.isActive()) {
-		// ScummVM's dialogs: Enter for the default button, unless the
-		// button is the pad's left click, which confirms by itself; Esc
-		// closes a dialog, but not the launcher (that would quit ScummVM)
-		if (which == kOK && !SDL_JoystickGetButton(_pad, MISTER_JOY_LEFT_CLICK))
+		// ScummVM's dialogs: a click at the pointer on a button that is one of
+		// the pad's actions as well (isMenuAction()), else Enter for the default
+		// button, unless the button is the pad's left click, which confirms by
+		// itself; Esc closes a dialog, but not the launcher (that would quit
+		// ScummVM)
+		if (which == kOK && sameAsAction)
+			sent = kSentLeftClick;
+		else if (which == kOK && !SDL_JoystickGetButton(_pad, MISTER_JOY_LEFT_CLICK))
 			sent = kSentReturn;
 		else if (which == kBack && (g_engine || g_gui.getDialogCount() > 1))
 			sent = kSentEscape;
-	} else if (!actionHeld()) {
+	} else if (!sameAsAction && !actionHeld()) {
 		// a game's own menus are the pointer's: a click, and Esc
 		sent = which == kOK ? kSentLeftClick : kSentEscape;
 	}

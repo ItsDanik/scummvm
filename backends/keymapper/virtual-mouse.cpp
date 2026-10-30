@@ -30,6 +30,10 @@
 
 #include "gui/gui-manager.h"
 
+#ifdef MISTER_HYBRID
+#include <mister_hybrid.h>
+#endif
+
 namespace Common {
 
 VirtualMouse::VirtualMouse(EventDispatcher *eventDispatcher) :
@@ -43,6 +47,12 @@ VirtualMouse::VirtualMouse(EventDispatcher *eventDispatcher) :
 		_subPixelRemainderY(0.f),
 		_lastUpdateMillis(0) {
 #ifdef MISTER_HYBRID
+	_instance = this;
+	_lastField = 0;
+	_frameField = 0;
+	_lastMoveField = 0;
+	_moved = false;
+	_warping = false;
 	_dpadX = _dpadY = DpadAxis();
 #endif
 	ConfMan.registerDefault("kbdmouse_speed", 3);
@@ -53,22 +63,138 @@ VirtualMouse::VirtualMouse(EventDispatcher *eventDispatcher) :
 }
 
 VirtualMouse::~VirtualMouse() {
+#ifdef MISTER_HYBRID
+	_instance = nullptr;
+#endif
 	_eventDispatcher->unregisterObserver(this);
 	_eventDispatcher->unregisterSource(this);
 }
 
+#ifdef MISTER_HYBRID
+VirtualMouse *VirtualMouse::_instance = nullptr;
+
+void VirtualMouse::updateBeforeFrame() {
+	if (_instance) {
+		_instance->movePointer(_instance->_frameField);
+	}
+}
+
+void VirtualMouse::updateAfterFrame() {
+	if (_instance) {
+		_instance->_frameField = MH_FieldCounter();
+	}
+}
+
+// Once before every frame shown, as many fields' worth as went by between the
+// last two frames: the engines poll at their own rates (Lure at 50 Hz on a
+// screen of 59.6 frames, and every fifth frame the pointer stood still and the
+// next went twice as far), and the counter is read just after a frame, as it
+// ticks: before one it may just have ticked or not. The game hears of the move
+// at its next poll.
+void VirtualMouse::movePointer(uint32 field) {
+	if ((int32)(field - _lastField) <= 0) {
+		return;
+	}
+	const float step = MIN<uint32>(field - _lastField, kMaxStep);
+	_lastField = field;
+
+	// Adjust the speed of the cursor according to the virtual screen resolution
+	Common::Rect screenSize;
+	if (g_system->isOverlayVisible()) {
+		screenSize = Common::Rect(g_system->getOverlayWidth(), g_system->getOverlayHeight());
+	} else {
+		screenSize = Common::Rect(g_system->getWidth(), g_system->getHeight());
+	}
+
+	float screenSizeSpeedModifier = screenSize.width() / (float)kDefaultScreenWidth;
+
+	// The stick first: Main_MiSTer presses the d-pad as well when the stick is
+	// pushed past half way, and lets it go again on the way back, which must
+	// not change the speed (MisterEventSource::isStickDpad() stops that press
+	// while the pointer is on the screen, not with the pointer hidden)
+	const uint32 curTime = g_system->getMillis(true);
+	const bool stickMoves = _mouseVelocityX != 0.f || _mouseVelocityY != 0.f;
+	const float velocityX = stickMoves ? _mouseVelocityX : dpadVelocity(_dpadX, curTime);
+	const float velocityY = stickMoves ? _mouseVelocityY : dpadVelocity(_dpadY, curTime);
+
+	// Nothing left over from before, or a tap of the d-pad could be a pixel more
+	if (velocityX == 0.f) {
+		_subPixelRemainderX = 0.f;
+	}
+	if (velocityY == 0.f) {
+		_subPixelRemainderY = 0.f;
+	}
+
+	float deltaX = _subPixelRemainderX + velocityX * _slowModifier * screenSizeSpeedModifier * 10.f * step;
+	float deltaY = _subPixelRemainderY + velocityY * _slowModifier * screenSizeSpeedModifier * 10.f * step;
+
+	Common::Point delta;
+	delta.x = deltaX;
+	delta.y = deltaY;
+
+	// Keep track of sub-pixel movement so the cursor ultimately moves,
+	// even when configured at very low speeds.
+	_subPixelRemainderX = deltaX - delta.x;
+	_subPixelRemainderY = deltaY - delta.y;
+
+	delta.x += _dpadX.firstPixels;
+	delta.y += _dpadY.firstPixels;
+	_dpadX.firstPixels = _dpadY.firstPixels = 0;
+
+	if (delta.x == 0 && delta.y == 0) {
+		return;
+	}
+
+	// During a stroke from where the last move went, which the game may not have
+	// heard of yet (warpMouse() throws away what is queued)
+	Common::Point pos = (field - _lastMoveField < kMaxStep ? _movedTo : g_system->getEventManager()->getMousePos()) + delta;
+
+	// The last pixel: a game's x of 320 at 320x200 is off its screen
+	pos.x = CLIP<int16>(pos.x, 0, screenSize.width() - 1);
+	pos.y = CLIP<int16>(pos.y, 0, screenSize.height() - 1);
+
+	_movedBy += delta;
+	_movedTo = pos;
+	_moved = true;
+	_lastMoveField = field;
+
+	// It polls the event sources: not this one, or the move is thrown away
+	_warping = true;
+	g_system->warpMouse(pos.x, pos.y);
+	_warping = false;
+}
+
+bool VirtualMouse::pollEvent(Event &event) {
+	if (_warping) {
+		return false;
+	}
+
+	// An engine that has stopped showing frames for a while
+	const uint32 field = MH_FieldCounter();
+	if (field - _frameField > kMaxStep) {
+		movePointer(field);
+	}
+	if (!_moved) {
+		return false;
+	}
+
+	// Send a mouse event
+	event.type = Common::EVENT_MOUSEMOVE;
+	event.mouse = _movedTo;
+	event.relMouse = _movedBy;
+
+	_moved = false;
+	_movedBy = Common::Point();
+
+	return true;
+}
+#else
 bool VirtualMouse::pollEvent(Event &event) {
 	// Update the virtual mouse once per frame (assuming 60Hz)
 	uint32 curTime = g_system->getMillis(true);
 	if (curTime < _lastUpdateMillis + kUpdateDelay) {
 		return false;
 	}
-#ifdef MISTER_HYBRID
-	// The time since the last update, not a fixed step for each: engines poll
-	// at their own rates, and a game at 480i every second field at most, which
-	// was half the pointer's speed
-	const float step = MIN<uint32>(curTime - _lastUpdateMillis, kMaxStep) * 60.f / 1000.f;
-#endif
 	_lastUpdateMillis = curTime;
 
 	// Adjust the speed of the cursor according to the virtual screen resolution
@@ -81,30 +207,9 @@ bool VirtualMouse::pollEvent(Event &event) {
 
 	float screenSizeSpeedModifier = screenSize.width() / (float)kDefaultScreenWidth;
 
-#ifdef MISTER_HYBRID
-	// The stick first: Main_MiSTer presses the d-pad as well when the stick is
-	// pushed past half way, and lets it go again on the way back, which must
-	// not change the speed (MisterEventSource::isStickDpad() stops that press
-	// while the pointer is on the screen, not with the pointer hidden)
-	const bool stickMoves = _mouseVelocityX != 0.f || _mouseVelocityY != 0.f;
-	const float velocityX = stickMoves ? _mouseVelocityX : dpadVelocity(_dpadX, curTime);
-	const float velocityY = stickMoves ? _mouseVelocityY : dpadVelocity(_dpadY, curTime);
-
-	// Nothing left over from before, or a tap of the d-pad could be two pixels
-	if (velocityX == 0.f) {
-		_subPixelRemainderX = 0.f;
-	}
-	if (velocityY == 0.f) {
-		_subPixelRemainderY = 0.f;
-	}
-
-	float deltaX = _subPixelRemainderX + velocityX * _slowModifier * screenSizeSpeedModifier * 10.f * step;
-	float deltaY = _subPixelRemainderY + velocityY * _slowModifier * screenSizeSpeedModifier * 10.f * step;
-#else
 	// Compute the movement delta when compared to the previous update
 	float deltaX = _subPixelRemainderX + _mouseVelocityX * _slowModifier * screenSizeSpeedModifier * 10.f;
 	float deltaY = _subPixelRemainderY + _mouseVelocityY * _slowModifier * screenSizeSpeedModifier * 10.f;
-#endif
 
 	Common::Point delta;
 	delta.x = deltaX;
@@ -114,12 +219,6 @@ bool VirtualMouse::pollEvent(Event &event) {
 	// even when configured at very low speeds.
 	_subPixelRemainderX = deltaX - delta.x;
 	_subPixelRemainderY = deltaY - delta.y;
-
-#ifdef MISTER_HYBRID
-	delta.x += _dpadX.firstPixel;
-	delta.y += _dpadY.firstPixel;
-	_dpadX.firstPixel = _dpadY.firstPixel = 0;
-#endif
 
 	if (delta.x == 0 && delta.y == 0) {
 		return false;
@@ -131,14 +230,8 @@ bool VirtualMouse::pollEvent(Event &event) {
 	event.type = Common::EVENT_MOUSEMOVE;
 	event.mouse = oldPos + delta;
 
-#ifdef MISTER_HYBRID
-	// The last pixel: a game's x of 320 at 320x200 is off its screen
-	event.mouse.x = CLIP<int16>(event.mouse.x, 0, screenSize.width() - 1);
-	event.mouse.y = CLIP<int16>(event.mouse.y, 0, screenSize.height() - 1);
-#else
 	event.mouse.x = CLIP<int16>(event.mouse.x, 0, screenSize.width());
 	event.mouse.y = CLIP<int16>(event.mouse.y, 0, screenSize.height());
-#endif
 
 	event.relMouse.x = delta.x;
 	event.relMouse.y = delta.y;
@@ -147,6 +240,7 @@ bool VirtualMouse::pollEvent(Event &event) {
 
 	return true;
 }
+#endif
 
 bool VirtualMouse::notifyEvent(const Event &event) {
 	if (event.type != EVENT_CUSTOM_BACKEND_ACTION_AXIS) {
@@ -286,10 +380,11 @@ void VirtualMouse::handleAxisMotion(int16 axisPositionX, int16 axisPositionY) {
 void VirtualMouse::handleDpad(DpadAxis &axis, bool &direction, int sign, bool down) {
 	direction = down;
 	axis.start = g_system->getMillis(true);
-	// The first pixel at once, however short the tap, but not with the stick
-	// moving the pointer (pollEvent())
+	// The tap's pixels at once, however short the tap (with Slow Pointer held
+	// one, to reach every pixel), but not with the stick moving the pointer
+	// (pollEvent())
 	if (down && _mouseVelocityX == 0.f && _mouseVelocityY == 0.f) {
-		axis.firstPixel = sign;
+		axis.firstPixels = sign * (_slowModifier < 1.f ? 1 : kDpadTap);
 	}
 }
 
