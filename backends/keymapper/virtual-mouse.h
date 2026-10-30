@@ -65,10 +65,38 @@ private:
 		kCustomActionVirtualAxisLeft  = 10002,
 		kCustomActionVirtualAxisRight = 10003,
 		kCustomActionVirtualMouseSlow = 10004
+#ifdef MISTER_HYBRID
+		,
+		kCustomActionVirtualDpadUp    = 10005,
+		kCustomActionVirtualDpadDown  = 10006,
+		kCustomActionVirtualDpadLeft  = 10007,
+		kCustomActionVirtualDpadRight = 10008
+#endif
 	};
 
 	void handleAxisMotion(int16 axisPositionX, int16 axisPositionY);
 	float computeJoystickMouseSpeedFactor() const;
+
+#ifdef MISTER_HYBRID
+	// The d-pad, apart from the stick: a tap moves the pointer one pixel, held
+	// it starts slow and gets faster, up to the stick's full speed
+	static const uint32 kDpadRampDelay = 150; // ms before it moves on by itself
+	static const uint32 kDpadRampTime = 850;  // ms from then to its full speed
+	static const uint32 kMaxStep = 100;       // ms a slow frame or a load counts for
+
+	struct DpadAxis {
+		bool negative;
+		bool positive;
+		uint32 start;
+		int firstPixel;
+	};
+
+	void handleDpad(DpadAxis &axis, bool &direction, int sign, bool down);
+	float dpadVelocity(DpadAxis &axis, uint32 curTime) const;
+
+	DpadAxis _dpadX;
+	DpadAxis _dpadY;
+#endif
 
 	EventDispatcher *_eventDispatcher;
 

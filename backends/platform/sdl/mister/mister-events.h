@@ -53,11 +53,13 @@ private:
 
 	bool menuButton(int which, bool down, Common::Event &event);
 	bool actionHeld() const;
+	bool isStickDpad(const SDL_ControllerButtonEvent &button);
 
 	OSystem_SDL_MiSTer *_system;
 	SDL_Joystick *_pad;
 	int _held[2];   // the buttons that are Menu OK (Menu Back) held, as a mask
 	Sent _sent[2];  // what its press sent, for its release
+	uint32 _stickDpad; // the d-pad directions held that are the stick's (MH_JOY_*)
 };
 
 #endif

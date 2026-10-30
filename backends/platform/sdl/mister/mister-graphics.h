@@ -46,6 +46,8 @@ public:
 
 	Common::Rect getSafeOverlayArea(int16 *width, int16 *height) const override;
 
+	bool isCursorVisible() const { return _cursorVisible; }
+
 protected:
 	void setupHardwareSize() override;
 	void initGraphicsSurface() override;

@@ -42,6 +42,9 @@ VirtualMouse::VirtualMouse(EventDispatcher *eventDispatcher) :
 		_subPixelRemainderX(0.f),
 		_subPixelRemainderY(0.f),
 		_lastUpdateMillis(0) {
+#ifdef MISTER_HYBRID
+	_dpadX = _dpadY = DpadAxis();
+#endif
 	ConfMan.registerDefault("kbdmouse_speed", 3);
 	ConfMan.registerDefault("joystick_deadzone", 3);
 
@@ -60,6 +63,12 @@ bool VirtualMouse::pollEvent(Event &event) {
 	if (curTime < _lastUpdateMillis + kUpdateDelay) {
 		return false;
 	}
+#ifdef MISTER_HYBRID
+	// The time since the last update, not a fixed step for each: engines poll
+	// at their own rates, and a game at 480i every second field at most, which
+	// was half the pointer's speed
+	const float step = MIN<uint32>(curTime - _lastUpdateMillis, kMaxStep) * 60.f / 1000.f;
+#endif
 	_lastUpdateMillis = curTime;
 
 	// Adjust the speed of the cursor according to the virtual screen resolution
@@ -72,9 +81,30 @@ bool VirtualMouse::pollEvent(Event &event) {
 
 	float screenSizeSpeedModifier = screenSize.width() / (float)kDefaultScreenWidth;
 
+#ifdef MISTER_HYBRID
+	// The stick first: Main_MiSTer presses the d-pad as well when the stick is
+	// pushed past half way, and lets it go again on the way back, which must
+	// not change the speed (MisterEventSource::isStickDpad() stops that press
+	// while the pointer is on the screen, not with the pointer hidden)
+	const bool stickMoves = _mouseVelocityX != 0.f || _mouseVelocityY != 0.f;
+	const float velocityX = stickMoves ? _mouseVelocityX : dpadVelocity(_dpadX, curTime);
+	const float velocityY = stickMoves ? _mouseVelocityY : dpadVelocity(_dpadY, curTime);
+
+	// Nothing left over from before, or a tap of the d-pad could be two pixels
+	if (velocityX == 0.f) {
+		_subPixelRemainderX = 0.f;
+	}
+	if (velocityY == 0.f) {
+		_subPixelRemainderY = 0.f;
+	}
+
+	float deltaX = _subPixelRemainderX + velocityX * _slowModifier * screenSizeSpeedModifier * 10.f * step;
+	float deltaY = _subPixelRemainderY + velocityY * _slowModifier * screenSizeSpeedModifier * 10.f * step;
+#else
 	// Compute the movement delta when compared to the previous update
 	float deltaX = _subPixelRemainderX + _mouseVelocityX * _slowModifier * screenSizeSpeedModifier * 10.f;
 	float deltaY = _subPixelRemainderY + _mouseVelocityY * _slowModifier * screenSizeSpeedModifier * 10.f;
+#endif
 
 	Common::Point delta;
 	delta.x = deltaX;
@@ -84,6 +114,12 @@ bool VirtualMouse::pollEvent(Event &event) {
 	// even when configured at very low speeds.
 	_subPixelRemainderX = deltaX - delta.x;
 	_subPixelRemainderY = deltaY - delta.y;
+
+#ifdef MISTER_HYBRID
+	delta.x += _dpadX.firstPixel;
+	delta.y += _dpadY.firstPixel;
+	_dpadX.firstPixel = _dpadY.firstPixel = 0;
+#endif
 
 	if (delta.x == 0 && delta.y == 0) {
 		return false;
@@ -95,8 +131,14 @@ bool VirtualMouse::pollEvent(Event &event) {
 	event.type = Common::EVENT_MOUSEMOVE;
 	event.mouse = oldPos + delta;
 
+#ifdef MISTER_HYBRID
+	// The last pixel: a game's x of 320 at 320x200 is off its screen
+	event.mouse.x = CLIP<int16>(event.mouse.x, 0, screenSize.width() - 1);
+	event.mouse.y = CLIP<int16>(event.mouse.y, 0, screenSize.height() - 1);
+#else
 	event.mouse.x = CLIP<int16>(event.mouse.x, 0, screenSize.width());
 	event.mouse.y = CLIP<int16>(event.mouse.y, 0, screenSize.height());
+#endif
 
 	event.relMouse.x = delta.x;
 	event.relMouse.y = delta.y;
@@ -143,6 +185,20 @@ bool VirtualMouse::notifyEvent(const Event &event) {
 	case kCustomActionVirtualMouseSlow:
 		_slowModifier = 0.9f * (1.f - event.joystick.position / (float)JOYAXIS_MAX) + 0.1f;
 		return true;
+#ifdef MISTER_HYBRID
+	case kCustomActionVirtualDpadUp:
+		handleDpad(_dpadY, _dpadY.negative, -1, event.joystick.position != 0);
+		return true;
+	case kCustomActionVirtualDpadDown:
+		handleDpad(_dpadY, _dpadY.positive, 1, event.joystick.position != 0);
+		return true;
+	case kCustomActionVirtualDpadLeft:
+		handleDpad(_dpadX, _dpadX.negative, -1, event.joystick.position != 0);
+		return true;
+	case kCustomActionVirtualDpadRight:
+		handleDpad(_dpadX, _dpadX.positive, 1, event.joystick.position != 0);
+		return true;
+#endif
 	default:
 		break;
 	}
@@ -177,6 +233,24 @@ void VirtualMouse::addActionsToKeymap(Keymap *keymap) {
 	act->addDefaultInputMapping("JOY_RIGHT_SHOULDER");
 	act->setCustomBackendActionAxisEvent(VirtualMouse::kCustomActionVirtualMouseSlow);
 	keymap->addAction(act);
+
+#ifdef MISTER_HYBRID
+	act = new Action("VMOUSEDPADUP", _("Virtual mouse up (d-pad)"));
+	act->setCustomBackendActionAxisEvent(VirtualMouse::kCustomActionVirtualDpadUp);
+	keymap->addAction(act);
+
+	act = new Action("VMOUSEDPADDOWN", _("Virtual mouse down (d-pad)"));
+	act->setCustomBackendActionAxisEvent(VirtualMouse::kCustomActionVirtualDpadDown);
+	keymap->addAction(act);
+
+	act = new Action("VMOUSEDPADLEFT", _("Virtual mouse left (d-pad)"));
+	act->setCustomBackendActionAxisEvent(VirtualMouse::kCustomActionVirtualDpadLeft);
+	keymap->addAction(act);
+
+	act = new Action("VMOUSEDPADRIGHT", _("Virtual mouse right (d-pad)"));
+	act->setCustomBackendActionAxisEvent(VirtualMouse::kCustomActionVirtualDpadRight);
+	keymap->addAction(act);
+#endif
 }
 
 void VirtualMouse::handleAxisMotion(int16 axisPositionX, int16 axisPositionY) {
@@ -190,7 +264,15 @@ void VirtualMouse::handleAxisMotion(int16 axisPositionX, int16 axisPositionY) {
 	float magnitude = sqrt(analogX * analogX + analogY * analogY);
 
 	if (magnitude >= deadZone) {
+#ifdef MISTER_HYBRID
+		// Squared, for the small movements a point and click game needs: a
+		// quarter of the speed at half way out, full speed at the edge, and a
+		// stick that goes further on the diagonal no faster than straight on
+		float tilt = MIN((magnitude - deadZone) / (JOYAXIS_MAX - deadZone), 1.f);
+		float scalingFactor = 1.0f / magnitude * tilt * tilt;
+#else
 		float scalingFactor = 1.0f / magnitude * (magnitude - deadZone) / (JOYAXIS_MAX - deadZone);
+#endif
 		float speedFactor = computeJoystickMouseSpeedFactor();
 		_mouseVelocityX = analogX * scalingFactor * speedFactor;
 		_mouseVelocityY = analogY * scalingFactor * speedFactor;
@@ -199,6 +281,30 @@ void VirtualMouse::handleAxisMotion(int16 axisPositionX, int16 axisPositionY) {
 		_mouseVelocityY = 0.f;
 	}
 }
+
+#ifdef MISTER_HYBRID
+void VirtualMouse::handleDpad(DpadAxis &axis, bool &direction, int sign, bool down) {
+	direction = down;
+	axis.start = g_system->getMillis(true);
+	// The first pixel at once, however short the tap, but not with the stick
+	// moving the pointer (pollEvent())
+	if (down && _mouseVelocityX == 0.f && _mouseVelocityY == 0.f) {
+		axis.firstPixel = sign;
+	}
+}
+
+float VirtualMouse::dpadVelocity(DpadAxis &axis, uint32 curTime) const {
+	const int direction = (axis.positive ? 1 : 0) - (axis.negative ? 1 : 0);
+	const uint32 held = curTime - axis.start;
+
+	if (direction == 0 || held < kDpadRampDelay) {
+		return 0.f;
+	}
+	const float ramp = MIN((held - kDpadRampDelay) / (float)kDpadRampTime, 1.f);
+	return direction * (0.1f + 0.9f * ramp * ramp) * computeJoystickMouseSpeedFactor();
+}
+
+#endif
 
 float VirtualMouse::computeJoystickMouseSpeedFactor() const {
 	switch (ConfMan.getInt("kbdmouse_speed")) {

@@ -22,6 +22,7 @@
 #define FORBIDDEN_SYMBOL_ALLOW_ALL
 
 #include "backends/platform/sdl/mister/mister-events.h"
+#include "backends/platform/sdl/mister/mister-graphics.h"
 #include "backends/platform/sdl/mister/mister.h"
 #include "backends/platform/sdl/mister/mister_port.h"
 
@@ -30,6 +31,8 @@
 #include "common/config-manager.h"
 #include "engines/engine.h"
 #include "gui/gui-manager.h"
+
+#include <mister_hybrid.h>
 
 void MisterEventSource::addControllerMapping() {
 	char guid[33];
@@ -50,7 +53,7 @@ void MisterEventSource::addControllerMapping() {
 		warning("MiSTer: no game controller mapping for the core's joystick: %s", SDL_GetError());
 }
 
-MisterEventSource::MisterEventSource(OSystem_SDL_MiSTer *system) : _system(system), _pad(nullptr) {
+MisterEventSource::MisterEventSource(OSystem_SDL_MiSTer *system) : _system(system), _pad(nullptr), _stickDpad(0) {
 	// a handle of our own, for its Menu OK / Back buttons and what else
 	// is held (ScummVM has it open as a game controller)
 	if (SDL_NumJoysticks() > 0)
@@ -105,7 +108,50 @@ bool MisterEventSource::dispatchSDLEvent(SDL_Event &ev, Common::Event &event) {
 			return menuButton(which, _held[which] != 0, event);
 		}
 	}
+	if ((ev.type == SDL_CONTROLLERBUTTONDOWN || ev.type == SDL_CONTROLLERBUTTONUP) && _pad && isStickDpad(ev.cbutton))
+		return false;
 	return SdlEventSource::dispatchSDLEvent(ev, event);
+}
+
+// Main_MiSTer presses the d-pad as well when a stick is pushed past half way
+// (dpad_threshold in MiSTer.ini). While there is a pointer on the screen the
+// left stick is the pointer and nothing else: that press goes no further, or
+// the engines' actions on the d-pad came with it, Drascula's save and load
+// menu with the stick pushed to the right, Queen's inventory scrolling up and
+// down. Without a pointer the stick can do nothing else: Grim Fandango walks
+// with it, as it does on the d-pad.
+bool MisterEventSource::isStickDpad(const SDL_ControllerButtonEvent &button) {
+	uint32 direction;
+
+	switch (button.button) {
+	case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:
+		direction = MH_JOY_RIGHT;
+		break;
+	case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
+		direction = MH_JOY_LEFT;
+		break;
+	case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+		direction = MH_JOY_DOWN;
+		break;
+	case SDL_CONTROLLER_BUTTON_DPAD_UP:
+		direction = MH_JOY_UP;
+		break;
+	default:
+		return false;
+	}
+
+	const bool wasStick = (_stickDpad & direction) != 0;
+
+	_stickDpad &= ~direction;
+	// its release goes where its press went
+	if (button.state != SDL_PRESSED)
+		return wasStick;
+	if (!_graphicsManager || !static_cast<MisterGraphicsManager *>(_graphicsManager)->isCursorVisible())
+		return false;
+	if (!(MH_StickDpad(SDL_JoystickGetAxis(_pad, 0) >> 8, SDL_JoystickGetAxis(_pad, 1) >> 8) & direction))
+		return false;
+	_stickDpad |= direction;
+	return true;
 }
 
 // A button of the pad's eight actions is held: the Menu OK / Back pressed now

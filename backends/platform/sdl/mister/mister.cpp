@@ -285,13 +285,13 @@ Common::KeymapperDefaultBindings *OSystem_SDL_MiSTer::getKeymapperDefaultBinding
 	Common::KeymapperDefaultBindings *bindings = new Common::KeymapperDefaultBindings();
 
 	bindings->setDefaultBinding(Common::kGlobalKeymapName, "VMOUSEUP", "JOY_LEFT_STICK_Y-");
-	bindings->addDefaultBinding(Common::kGlobalKeymapName, "VMOUSEUP", "JOY_UP");
 	bindings->setDefaultBinding(Common::kGlobalKeymapName, "VMOUSEDOWN", "JOY_LEFT_STICK_Y+");
-	bindings->addDefaultBinding(Common::kGlobalKeymapName, "VMOUSEDOWN", "JOY_DOWN");
 	bindings->setDefaultBinding(Common::kGlobalKeymapName, "VMOUSELEFT", "JOY_LEFT_STICK_X-");
-	bindings->addDefaultBinding(Common::kGlobalKeymapName, "VMOUSELEFT", "JOY_LEFT");
 	bindings->setDefaultBinding(Common::kGlobalKeymapName, "VMOUSERIGHT", "JOY_LEFT_STICK_X+");
-	bindings->addDefaultBinding(Common::kGlobalKeymapName, "VMOUSERIGHT", "JOY_RIGHT");
+	bindings->setDefaultBinding(Common::kGlobalKeymapName, "VMOUSEDPADUP", "JOY_UP");
+	bindings->setDefaultBinding(Common::kGlobalKeymapName, "VMOUSEDPADDOWN", "JOY_DOWN");
+	bindings->setDefaultBinding(Common::kGlobalKeymapName, "VMOUSEDPADLEFT", "JOY_LEFT");
+	bindings->setDefaultBinding(Common::kGlobalKeymapName, "VMOUSEDPADRIGHT", "JOY_RIGHT");
 	bindings->setDefaultBinding(Common::kGlobalKeymapName, "VMOUSESLOW", "JOY_LEFT_SHOULDER");
 
 	// the d-pad is the pointer in the GUI and the games too
