@@ -440,14 +440,13 @@ Common::Error SciEngine::run() {
 				// the extras folder of the MiSTer's port is beside the games
 				// (backends/platform/sdl/mister/mister.cpp): named here, as
 				// the options dialogs show no paths
-				showScummVMDialog(Common::U32String("This game's General MIDI music needs Sierra's "
-				                  "patch from their \"General MIDI Utility\". Unpack its *.PAT "
-				                  "files into the folder extras in games/dnk/ScummVM (on the "
-				                  "USB drive if your games are there) and ScummVM will use the "
-				                  "right one. Or rename this game's *.PAT file to 4.PAT and put "
-				                  "it in the game's folder. Without the patch the music sounds "
-				                  "badly distorted; the OSD's Music: FM chip plays the game's "
-				                  "AdLib music instead (at the next start of the game)."));
+				// (short enough for the 320x200 dialog, which cuts off what
+				// does not fit)
+				showScummVMDialog(Common::U32String("This game's MIDI music needs Sierra's "
+				                  "patch from their \"General MIDI Utility\". Put its *.PAT "
+				                  "files in the folder extras beside scummvm.ini, "
+				                  "games/dnk/ScummVM/extras on the SD card or USB drive. Or "
+				                  "set the OSD's Music to FM chip."));
 #else
 				showScummVMDialog(_("You have selected General MIDI as a sound device. Sierra "
 				                  "has provided after-market support for General MIDI for this "
