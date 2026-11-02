@@ -40,6 +40,7 @@ public:
 
 	Common::KeymapperDefaultBindings *getKeymapperDefaultBindings() override;
 	Common::Path getDefaultIconsPath() override;
+	void addSysArchivesToSearchSet(Common::SearchSet &s, int priority) override;
 
 	// The OSD's options, applied as they change: called with every event poll
 	void applyOSD(bool force);

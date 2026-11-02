@@ -30,13 +30,16 @@
 #include "backends/keymapper/keymapper.h"
 #include "backends/keymapper/keymapper-defaults.h"
 #include "backends/mixer/null/null-mixer.h"
+#include "common/archive.h"
 #include "common/config-manager.h"
 #include "common/debug.h"
+#include "common/fs.h"
 #include "common/translation.h"
 #include "engines/engine.h"
 
 #include <mister_hybrid.h>
 #include <limits.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 // The folder of the program (in data/ the themes, engine data and the
@@ -319,6 +322,24 @@ Common::KeymapperDefaultBindings *OSystem_SDL_MiSTer::getKeymapperDefaultBinding
 // written to it would stop the game)
 Common::Path OSystem_SDL_MiSTer::getDefaultConfigFileName() {
 	return dataDir().join("scummvm.ini");
+}
+
+// The player's extras folder, games/dnk/ScummVM/extras (on the USB drive if
+// the games are there): the "extrapath" is the port's own data/ on the SD
+// card, and the options dialogs show no paths. Below the game's folder (the
+// default priority, 0), so a 4.PAT there wins; files in its folders are found
+// by their name too (a patch unpacked into a folder of its own). Added again
+// whenever SearchMan is cleared, before each game; made here if it is not
+// there, so that the player finds it (engines/sci's message names it).
+void OSystem_SDL_MiSTer::addSysArchivesToSearchSet(Common::SearchSet &s, int priority) {
+	const Common::Path path = dataDir().join("extras");
+
+	mkdir(path.toString().c_str(), 0755);
+	Common::FSNode extras(path);
+
+	if (extras.exists() && extras.isDirectory())
+		s.addDirectory("mister_extras", extras, priority, 4, true);
+	OSystem_POSIX::addSysArchivesToSearchSet(s, priority);
 }
 
 // ScummVM's game icons come with the port (tools/icons.sh of ScummVM_MiSTer),

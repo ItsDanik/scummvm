@@ -436,6 +436,19 @@ Common::Error SciEngine::run() {
 			case GID_SQ1:
 			case GID_SQ4:
 			case GID_FAIRYTALES:
+#ifdef MISTER_HYBRID
+				// the extras folder of the MiSTer's port is beside the games
+				// (backends/platform/sdl/mister/mister.cpp): named here, as
+				// the options dialogs show no paths
+				showScummVMDialog(Common::U32String("This game's General MIDI music needs Sierra's "
+				                  "patch from their \"General MIDI Utility\". Unpack its *.PAT "
+				                  "files into the folder extras in games/dnk/ScummVM (on the "
+				                  "USB drive if your games are there) and ScummVM will use the "
+				                  "right one. Or rename this game's *.PAT file to 4.PAT and put "
+				                  "it in the game's folder. Without the patch the music sounds "
+				                  "badly distorted; the OSD's Music: FM chip plays the game's "
+				                  "AdLib music instead (at the next start of the game)."));
+#else
 				showScummVMDialog(_("You have selected General MIDI as a sound device. Sierra "
 				                  "has provided after-market support for General MIDI for this "
 				                  "game in their \"General MIDI Utility\". Please, apply this "
@@ -447,6 +460,7 @@ Common::Error SciEngine::run() {
 				                  "rename the associated *.PAT file to 4.PAT and place it in the "
 				                  "game folder. Without this patch, General MIDI music for this "
 				                  "game will sound badly distorted."));
+#endif
 				break;
 			default:
 				break;
